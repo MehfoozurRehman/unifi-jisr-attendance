@@ -1,4 +1,3 @@
-# Build stage
 FROM node:22-alpine AS builder
 
 WORKDIR /app
@@ -10,7 +9,6 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Production runtime stage
 FROM node:22-alpine AS runner
 
 WORKDIR /app
