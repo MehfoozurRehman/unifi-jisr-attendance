@@ -53,6 +53,7 @@ console.log(`🚀 UniFi-Jisr Attendance Service listening on port ${port} (Zero-
 serve({
   fetch: app.fetch,
   port,
+  hostname: '0.0.0.0',
 });
 
 export default app;
