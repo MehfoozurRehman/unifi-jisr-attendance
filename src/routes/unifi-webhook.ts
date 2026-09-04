@@ -7,12 +7,12 @@ export const unifiWebhookRoutes = new Hono();
 
 unifiWebhookRoutes.post('/', async (c) => {
 
-  if (config.UNIFI_WEBHOOK_SECRET) {
-    const authHeader = c.req.header('Authorization') || c.req.header('x-webhook-secret');
-    const token = authHeader?.replace(/^Bearer\s+/i, '');
-    if (token !== config.UNIFI_WEBHOOK_SECRET) {
-      return c.json({ error: 'Unauthorized webhook request' }, 401);
-    }
+  const secretParam = c.req.query('secret');
+  const authHeader = c.req.header('Authorization') || c.req.header('x-webhook-secret');
+  const token = secretParam || authHeader?.replace(/^Bearer\s+/i, '');
+
+  if (config.UNIFI_WEBHOOK_SECRET && token !== config.UNIFI_WEBHOOK_SECRET) {
+    return c.json({ error: 'Unauthorized webhook request' }, 401);
   }
 
   try {
