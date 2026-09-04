@@ -7,7 +7,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   
-  UNIFI_WEBHOOK_SECRET: z.string().optional(),
+  UNIFI_WEBHOOK_SECRET: z.string().default('unifi-secret-2026'),
   UNIFI_BASE_URL: z.string().url().optional(),
   UNIFI_API_TOKEN: z.string().optional(),
   UNIFI_IGNORE_SSL: z
