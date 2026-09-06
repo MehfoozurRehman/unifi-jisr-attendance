@@ -221,9 +221,12 @@ export class JisrService {
     const empCode = payload.employee_code || payload.employee_id;
     const numericCode = Number(empCode);
 
-    const now = new Date(payload.timestamp || Date.now());
+    const parsedDate = new Date(payload.timestamp || Date.now());
+    const validDate = !isNaN(parsedDate.getTime()) ? parsedDate : new Date();
+    const saudiDate = new Date(validDate.getTime() + 3 * 60 * 60 * 1000);
+
     const pad = (n: number) => String(n).padStart(2, '0');
-    const punchTimeStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const punchTimeStr = `${saudiDate.getUTCFullYear()}-${pad(saudiDate.getUTCMonth() + 1)}-${pad(saudiDate.getUTCDate())} ${pad(saudiDate.getUTCHours())}:${pad(saudiDate.getUTCMinutes())}:${pad(saudiDate.getUTCSeconds())}`;
 
     const punchId = Math.floor(Math.random() * 1000000000) + 1;
     const terminalSn = payload.device_id || 'UNIFI-ACCESS';
