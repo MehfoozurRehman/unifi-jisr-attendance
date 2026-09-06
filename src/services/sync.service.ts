@@ -1,9 +1,15 @@
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
 import { config } from '../config.js';
 import type { UnifiWebhookPayload } from '../types/unifi.types.js';
 import type { PunchType } from '../types/jisr.types.js';
 import { dedupeService } from './dedupe.service.js';
 import { jisrService } from './jisr.service.js';
 import { unifiService } from './unifi.service.js';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export interface ProcessResult {
   status: 'PROCESSED' | 'IGNORED' | 'DUPLICATE' | 'ERROR' | 'UNMATCHED_USER';
@@ -57,14 +63,14 @@ export class SyncService {
         Date.now();
     }
 
-    const numericTime = Number(rawTime);
-    if (!isNaN(numericTime) && numericTime > 0) {
-      const ms = numericTime > 1e11 ? numericTime : numericTime * 1000;
-      return new Date(ms).toISOString();
+    const num = Number(rawTime);
+    if (!isNaN(num) && num > 0) {
+      const d = num > 1e11 ? dayjs(num) : dayjs.unix(num);
+      return d.tz('Asia/Riyadh').toISOString();
     }
 
-    const parsedDate = new Date(rawTime);
-    return !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
+    const d = dayjs(rawTime);
+    return d.isValid() ? d.tz('Asia/Riyadh').toISOString() : dayjs().tz('Asia/Riyadh').toISOString();
   }
 
   public async handleUnifiEvent(payload: UnifiWebhookPayload): Promise<ProcessResult> {
