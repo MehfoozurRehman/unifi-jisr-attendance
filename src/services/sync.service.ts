@@ -51,7 +51,10 @@ export class SyncService {
 
   public async handleUnifiEvent(payload: UnifiWebhookPayload): Promise<ProcessResult> {
     const eventType = payload.event || payload.data?.event_type;
+    console.log(`[Sync] Processing event: ${eventType || 'unspecified'}`);
+
     if (eventType && !eventType.includes('door.unlock') && !eventType.includes('access')) {
+      console.log(`[Sync] ⏭️ Ignored non-access event: ${eventType}`);
       return {
         status: 'IGNORED',
         reason: `Ignored non-access event: ${eventType}`,
@@ -60,6 +63,7 @@ export class SyncService {
 
     const result = payload.data?.result?.toUpperCase();
     if (result && result !== 'ACCESS_GRANTED' && result !== 'SUCCESS' && result !== 'PASSED') {
+      console.log(`[Sync] ⏭️ Access attempt was not granted (result: ${result})`);
       return {
         status: 'IGNORED',
         reason: `Access attempt was not granted: ${result}`,
@@ -71,15 +75,19 @@ export class SyncService {
       payload.data?.user_email;
 
     const userId = payload.actor?.id || payload.data?.user_id;
+    console.log(`[Sync] User detected - Email in payload: ${email || 'NONE'}, User ID: ${userId || 'NONE'}`);
 
     if (!email && userId) {
+      console.log(`[Sync] Querying UniFi API for email with user ID: ${userId}...`);
       const user = await unifiService.getUser(userId);
       if (user?.email) {
         email = user.email;
+        console.log(`[Sync] Resolved email via UniFi API: ${email}`);
       }
     }
 
     if (!email) {
+      console.warn(`[Sync] ⚠️ No email found for user ID: ${userId || 'unknown'}`);
       return {
         status: 'UNMATCHED_USER',
         reason: `No email found for user ID: ${userId || 'unknown'}`,
@@ -90,6 +98,7 @@ export class SyncService {
     const eventMs = new Date(timestampIso).getTime();
 
     if (dedupeService.isDuplicate(email, eventMs)) {
+      console.log(`[Sync] ⏭️ Duplicate swipe ignored for ${email} (within ${config.DEDUPLICATION_WINDOW_SECONDS}s)`);
       return {
         status: 'DUPLICATE',
         reason: `Duplicate swipe ignored within ${config.DEDUPLICATION_WINDOW_SECONDS}s window`,
@@ -97,8 +106,10 @@ export class SyncService {
       };
     }
 
+    console.log(`[Sync] Looking up employee in Jisr for email: ${email}...`);
     const employee = await jisrService.getEmployeeByEmail(email);
     if (!employee) {
+      console.warn(`[Sync] ❌ No Jisr employee found matching email: ${email}`);
       return {
         status: 'UNMATCHED_USER',
         reason: `No Jisr employee found matching email: ${email}`,
@@ -106,9 +117,13 @@ export class SyncService {
       };
     }
 
+    console.log(`[Sync] ✅ Matched Jisr employee: ${employee.first_name || ''} ${employee.last_name || ''} (ID: ${employee.id})`);
+
     const punchType = this.determinePunchDirection(payload);
     const deviceId = payload.data?.reader_id || payload.data?.door_id || 'unifi-reader';
     const doorName = payload.data?.door_name || payload.target?.name || 'Main Access Door';
+
+    console.log(`[Sync] Classified punch direction: ${punchType.toUpperCase()} based on door/reader: "${doorName}"`);
 
     const jisrResult = await jisrService.logAttendance({
       employee_id: employee.id,
@@ -120,6 +135,7 @@ export class SyncService {
     });
 
     if (!jisrResult.success) {
+      console.error(`[Sync] ❌ Jisr attendance log failed: ${jisrResult.message}`);
       return {
         status: 'ERROR',
         reason: jisrResult.message,
@@ -129,6 +145,8 @@ export class SyncService {
         timestamp: timestampIso,
       };
     }
+
+    console.log(`[Sync] 🎉 Successfully recorded ${punchType.toUpperCase()} punch for ${email} in Jisr!`);
 
     return {
       status: 'PROCESSED',
