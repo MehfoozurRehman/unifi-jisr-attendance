@@ -17,6 +17,7 @@ app.use('*', async (c, next) => {
 
 app.route('/health', healthRoutes);
 app.route('/api/webhooks/unifi', unifiWebhookRoutes);
+app.route('/api/webhook/unifi', unifiWebhookRoutes);
 app.route('/api/admin', adminRoutes);
 
 app.get('/', (c) => {
