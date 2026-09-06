@@ -31,37 +31,46 @@ export class JisrService {
   }
 
   public async refreshEmployees(): Promise<void> {
-    try {
-      console.log('[Jisr] Auto-syncing employee list from Jisr...');
-      const response = await fetch(`${this.baseUrl}/employees?status=active&limit=2000`, {
-        headers: this.getHeaders(),
-      });
+    const candidateBases = [
+      this.baseUrl,
+      'https://apis.jisr.net/api',
+      'https://api.jisr.net.sa/api',
+      'https://apis.jisr.net/api/v1',
+      'https://api.jisr.net.sa/api/v1',
+    ];
 
-      if (!response.ok) {
-        console.warn(`[Jisr] Could not fetch employee list (HTTP ${response.status}). Will retry next time.`);
-        return;
-      }
+    console.log('[Jisr] Auto-syncing employee list from Jisr...');
 
-      const result = (await response.json()) as any;
-      const employees: JisrEmployee[] = Array.isArray(result.data)
-        ? result.data
-        : Array.isArray(result)
-        ? result
-        : [];
+    for (const base of [...new Set(candidateBases)]) {
+      try {
+        const url = `${base}/employees?status=active&limit=2000`;
+        const response = await fetch(url, { headers: this.getHeaders() });
 
-      if (employees.length > 0) {
-        this.employeeCache.clear();
-        for (const emp of employees) {
-          if (emp.email) {
-            this.employeeCache.set(emp.email.toLowerCase().trim(), emp);
+        if (response.ok) {
+          const result = (await response.json()) as any;
+          const employees: JisrEmployee[] = Array.isArray(result.data)
+            ? result.data
+            : Array.isArray(result)
+            ? result
+            : [];
+
+          if (employees.length > 0) {
+            this.baseUrl = base.replace(/\/employees.*$/, '');
+            this.employeeCache.clear();
+            for (const emp of employees) {
+              if (emp.email) {
+                this.employeeCache.set(emp.email.toLowerCase().trim(), emp);
+              }
+            }
+            this.lastCacheRefresh = Date.now();
+            console.log(`[Jisr] ✅ Successfully discovered base "${this.baseUrl}" and cached ${this.employeeCache.size} employees.`);
+            return;
           }
         }
-        this.lastCacheRefresh = Date.now();
-        console.log(`[Jisr] Auto-cached ${this.employeeCache.size} employees in memory.`);
-      }
-    } catch (err: any) {
-      console.warn('[Jisr] Background refresh warning:', err.message);
+      } catch {}
     }
+
+    console.warn('[Jisr] ⚠️ Could not fetch employee list from candidate endpoints. Webhook punches will still attempt on-the-fly lookup.');
   }
 
   public async getEmployeeByEmail(email: string): Promise<JisrEmployee | null> {
