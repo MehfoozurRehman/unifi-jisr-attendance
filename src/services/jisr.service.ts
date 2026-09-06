@@ -73,6 +73,38 @@ export class JisrService {
     console.warn('[Jisr] ⚠️ Could not fetch employee list from candidate endpoints. Webhook punches will still attempt on-the-fly lookup.');
   }
 
+  public async getEmployeeByName(fullName: string): Promise<JisrEmployee | null> {
+    const cleanName = fullName.toLowerCase().trim();
+
+    if (Date.now() - this.lastCacheRefresh > this.cacheTtlMs || this.employeeCache.size === 0) {
+      await this.refreshEmployees();
+    }
+
+    for (const emp of this.employeeCache.values()) {
+      const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.toLowerCase().trim();
+      if (empName && (empName === cleanName || empName.includes(cleanName) || cleanName.includes(empName))) {
+        return emp;
+      }
+    }
+
+    for (const candidateBase of ['https://api.jisr.net.sa/api', 'https://apis.jisr.net/api']) {
+      try {
+        const response = await fetch(`${candidateBase}/employees?name=${encodeURIComponent(cleanName)}`, {
+          headers: this.getHeaders(),
+        });
+        if (response.ok) {
+          const result = (await response.json()) as any;
+          const list = Array.isArray(result.data) ? result.data : Array.isArray(result) ? result : [];
+          if (list.length > 0) {
+            return list[0];
+          }
+        }
+      } catch {}
+    }
+
+    return null;
+  }
+
   public async getEmployeeByEmail(email: string): Promise<JisrEmployee | null> {
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -83,82 +115,82 @@ export class JisrService {
     const cached = this.employeeCache.get(normalizedEmail);
     if (cached) return cached;
 
-    try {
-      const response = await fetch(`${this.baseUrl}/employees?email=${encodeURIComponent(normalizedEmail)}`, {
-        headers: this.getHeaders(),
-      });
-      if (response.ok) {
-        const result = (await response.json()) as any;
-        const list = Array.isArray(result.data) ? result.data : Array.isArray(result) ? result : [];
-        if (list.length > 0) {
-          const emp = list[0];
-          this.employeeCache.set(normalizedEmail, emp);
-          return emp;
+    for (const candidateBase of ['https://api.jisr.net.sa/api', 'https://apis.jisr.net/api']) {
+      try {
+        const response = await fetch(`${candidateBase}/employees?email=${encodeURIComponent(normalizedEmail)}`, {
+          headers: this.getHeaders(),
+        });
+        if (response.ok) {
+          const result = (await response.json()) as any;
+          const list = Array.isArray(result.data) ? result.data : Array.isArray(result) ? result : [];
+          if (list.length > 0) {
+            const emp = list[0];
+            this.employeeCache.set(normalizedEmail, emp);
+            return emp;
+          }
         }
-      }
-    } catch (err: any) {
-      console.warn(`[Jisr] Direct lookup failed for ${normalizedEmail}:`, err.message);
+      } catch {}
     }
 
     return null;
   }
 
   public async logAttendance(payload: JisrAttendanceLogPayload, retries = 3): Promise<JisrPunchResponse> {
-    const endpoint = `${this.baseUrl}/attendance/logs`;
+    const candidateUrls = [
+      `${this.baseUrl}/attendance/logs`,
+      'https://api.jisr.net.sa/api/attendance/logs',
+      'https://apis.jisr.net/api/attendance/logs',
+      'https://api.jisr.net.sa/api/v1/attendance/logs',
+      'https://apis.jisr.net/api/v1/attendance/logs',
+    ];
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        console.log(`[Jisr] Punching ${payload.punch_type.toUpperCase()} for ${payload.employee_id} (Attempt ${attempt}/${retries})`);
-        
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify({
-            employee_id: payload.employee_id,
-            date_time: payload.timestamp,
-            punch_type: payload.punch_type,
-            type: payload.punch_type,
-            device_id: payload.device_id || 'unifi-access',
-            source: payload.source || 'UniFi Access Controller',
-            note: payload.note,
-          }),
-        });
+    for (const endpoint of [...new Set(candidateUrls)]) {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          console.log(`[Jisr] Attempting punch at ${endpoint} for ${payload.employee_id} (Attempt ${attempt}/${retries})`);
+          
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify({
+              employee_id: payload.employee_id,
+              date_time: payload.timestamp,
+              punch_type: payload.punch_type,
+              type: payload.punch_type,
+              device_id: payload.device_id || 'unifi-access',
+              source: payload.source || 'UniFi Access Controller',
+              note: payload.note,
+            }),
+          });
 
-        const responseBody = await response.json().catch(() => ({}));
+          const responseBody = await response.json().catch(() => ({}));
 
-        if (response.ok) {
-          console.log(`[Jisr] ✅ Successfully recorded punch for employee ${payload.employee_id}`);
-          return {
-            success: true,
-            message: 'Punch logged successfully',
-            data: responseBody,
-          };
-        }
+          if (response.ok) {
+            console.log(`[Jisr] ✅ Successfully recorded punch for employee ${payload.employee_id} at ${endpoint}`);
+            this.baseUrl = endpoint.replace(/\/attendance\/logs.*$/, '');
+            return {
+              success: true,
+              message: 'Punch logged successfully',
+              data: responseBody,
+            };
+          }
 
-        if ((response.status >= 500 || response.status === 429) && attempt < retries) {
-          const delay = Math.pow(2, attempt) * 1000;
-          console.warn(`[Jisr] Temporary server error (HTTP ${response.status}), retrying in ${delay}ms...`);
-          await new Promise((r) => setTimeout(r, delay));
-          continue;
-        }
+          if (response.status === 404) {
+            break;
+          }
 
-        console.error(`[Jisr] ❌ Failed to record punch (HTTP ${response.status}):`, responseBody);
-        return {
-          success: false,
-          message: `HTTP ${response.status}: ${JSON.stringify(responseBody)}`,
-          data: responseBody,
-        };
-      } catch (err: any) {
-        if (attempt < retries) {
-          const delay = Math.pow(2, attempt) * 1000;
-          console.warn(`[Jisr] Network glitch, retrying in ${delay}ms...`);
-          await new Promise((r) => setTimeout(r, delay));
-        } else {
-          console.error('[Jisr] Network error posting punch after retries:', err.message);
-          return {
-            success: false,
-            message: err.message || 'Network error',
-          };
+          if ((response.status >= 500 || response.status === 429) && attempt < retries) {
+            const delay = Math.pow(2, attempt) * 1000;
+            console.warn(`[Jisr] Temporary server error (HTTP ${response.status}), retrying in ${delay}ms...`);
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+
+          console.error(`[Jisr] ❌ Failed to record punch at ${endpoint} (HTTP ${response.status}):`, responseBody);
+        } catch (err: any) {
+          if (attempt >= retries) {
+            console.error(`[Jisr] Network error at ${endpoint}:`, err.message);
+          }
         }
       }
     }

@@ -16,12 +16,20 @@ export interface ProcessResult {
 
 export class SyncService {
   public determinePunchDirection(payload: UnifiWebhookPayload): PunchType {
+    const rawAlarm = payload as any;
+    let eventTexts = '';
+    if (Array.isArray(rawAlarm.events) && rawAlarm.events.length > 0) {
+      const ev = rawAlarm.events[0];
+      eventTexts = `${ev.location_name || ''} ${ev.direction || ''} ${ev.device || ''}`;
+    }
+
     const textSources = [
       payload.data?.reader_name,
       payload.data?.door_name,
       payload.target?.name,
       payload.target?.display_name,
       payload.data?.event_type,
+      eventTexts,
     ]
       .filter(Boolean)
       .join(' ')
@@ -74,8 +82,27 @@ export class SyncService {
       payload.actor?.email ||
       payload.data?.user_email;
 
-    const userId = payload.actor?.id || payload.data?.user_id;
-    console.log(`[Sync] User detected - Email in payload: ${email || 'NONE'}, User ID: ${userId || 'NONE'}`);
+    let userName: string | undefined =
+      payload.actor?.name ||
+      payload.data?.user_name;
+
+    let userId = payload.actor?.id || payload.data?.user_id;
+
+    const rawAlarm = payload as any;
+    if (Array.isArray(rawAlarm.events) && rawAlarm.events.length > 0) {
+      const firstEvent = rawAlarm.events[0];
+      if (firstEvent.user_name) {
+        userName = firstEvent.user_name;
+      }
+      if (firstEvent.user_id) {
+        userId = firstEvent.user_id;
+      }
+      if (firstEvent.user_email) {
+        email = firstEvent.user_email;
+      }
+    }
+
+    console.log(`[Sync] User detected - Name: "${userName || 'NONE'}", Email: "${email || 'NONE'}", User ID: "${userId || 'NONE'}"`);
 
     if (!email && userId) {
       console.log(`[Sync] Querying UniFi API for email with user ID: ${userId}...`);
@@ -86,34 +113,23 @@ export class SyncService {
       }
     }
 
-    if (!email) {
-      console.warn(`[Sync] ⚠️ No email found for user ID: ${userId || 'unknown'}`);
-      return {
-        status: 'UNMATCHED_USER',
-        reason: `No email found for user ID: ${userId || 'unknown'}`,
-      };
+    let employee = null;
+    if (email) {
+      console.log(`[Sync] Looking up employee in Jisr by email: "${email}"...`);
+      employee = await jisrService.getEmployeeByEmail(email);
     }
 
-    const timestampIso = this.extractTimestamp(payload);
-    const eventMs = new Date(timestampIso).getTime();
-
-    if (dedupeService.isDuplicate(email, eventMs)) {
-      console.log(`[Sync] ⏭️ Duplicate swipe ignored for ${email} (within ${config.DEDUPLICATION_WINDOW_SECONDS}s)`);
-      return {
-        status: 'DUPLICATE',
-        reason: `Duplicate swipe ignored within ${config.DEDUPLICATION_WINDOW_SECONDS}s window`,
-        email,
-      };
+    if (!employee && userName) {
+      console.log(`[Sync] Email not found or unmatched. Looking up employee in Jisr by name: "${userName}"...`);
+      employee = await jisrService.getEmployeeByName(userName);
     }
 
-    console.log(`[Sync] Looking up employee in Jisr for email: ${email}...`);
-    const employee = await jisrService.getEmployeeByEmail(email);
     if (!employee) {
-      console.warn(`[Sync] ❌ No Jisr employee found matching email: ${email}`);
+      console.warn(`[Sync] ❌ No Jisr employee found matching email "${email || 'N/A'}" or name "${userName || 'N/A'}"`);
       return {
         status: 'UNMATCHED_USER',
-        reason: `No Jisr employee found matching email: ${email}`,
-        email,
+        reason: `No Jisr employee found matching email: ${email || userName || 'unknown'}`,
+        email: email || userName,
       };
     }
 
