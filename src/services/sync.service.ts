@@ -166,15 +166,17 @@ export class SyncService {
       };
     }
 
-    console.log(`[Sync] ✅ Matched Jisr employee: ${employee.first_name || ''} ${employee.last_name || ''} (ID: ${employee.id})`);
+    const empName = employee.full_name_en || employee.full_name_ar || userName || 'Employee';
+    console.log(`[Sync] ✅ Matched Jisr employee: ${empName} (Code: ${employee.code}, ID: ${employee.id})`);
 
     const punchType = this.determinePunchDirection(payload);
-    const deviceId = payload.data?.reader_id || payload.data?.door_id || 'unifi-reader';
+    const deviceId = payload.data?.reader_id || payload.data?.door_id || 'UNIFI-ACCESS';
     const doorName = payload.data?.door_name || payload.target?.name || 'Main Access Door';
 
     console.log(`[Sync] Classified punch direction: ${punchType.toUpperCase()} based on door/reader: "${doorName}"`);
 
     const jisrResult = await jisrService.logAttendance({
+      employee_code: employee.code,
       employee_id: employee.id,
       timestamp: timestampIso,
       punch_type: punchType,

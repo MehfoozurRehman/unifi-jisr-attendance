@@ -26,6 +26,7 @@ const envSchema = z.object({
     .default('cloud')
     .transform((val) => val.toLowerCase() as 'cloud' | 'local'),
   JISR_CUSTOM_BASE_URL: z.string().url().optional(),
+  JISR_SLUG: z.string().default('zood'),
   JISR_API_KEY: z.string().default('kbmnySRFFoiGJ_2zW8kwcg'),
   JISR_API_SECRET: z.string().default('gF5vi5OkV-WoPzv1I0MilA'),
   JISR_SYNC_INTERVAL_MINUTES: z.coerce.number().default(5),
