@@ -1,5 +1,11 @@
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
 import { config } from '../config.js';
 import type { JisrEmployee, JisrAttendanceLogPayload, JisrPunchResponse } from '../types/jisr.types.js';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export class JisrService {
   private baseUrl: string;
@@ -221,12 +227,12 @@ export class JisrService {
     const empCode = payload.employee_code || payload.employee_id;
     const numericCode = Number(empCode);
 
-    const parsedDate = new Date(payload.timestamp || Date.now());
-    const validDate = !isNaN(parsedDate.getTime()) ? parsedDate : new Date();
-    const saudiDate = new Date(validDate.getTime() + 3 * 60 * 60 * 1000);
-
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const punchTimeStr = `${saudiDate.getUTCFullYear()}-${pad(saudiDate.getUTCMonth() + 1)}-${pad(saudiDate.getUTCDate())} ${pad(saudiDate.getUTCHours())}:${pad(saudiDate.getUTCMinutes())}:${pad(saudiDate.getUTCSeconds())}`;
+    let parsedDay = dayjs(payload.timestamp);
+    if (!parsedDay.isValid()) {
+      const num = Number(payload.timestamp);
+      parsedDay = !isNaN(num) && num > 0 ? (num > 1e11 ? dayjs(num) : dayjs.unix(num)) : dayjs();
+    }
+    const punchTimeStr = parsedDay.tz('Asia/Riyadh').format('YYYY-MM-DD HH:mm:ss');
 
     const punchId = Math.floor(Math.random() * 1000000000) + 1;
     const terminalSn = payload.device_id || 'UNIFI-ACCESS';
