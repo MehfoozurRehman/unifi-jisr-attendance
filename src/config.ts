@@ -8,14 +8,23 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   
   UNIFI_WEBHOOK_SECRET: z.string().default('unifi-secret-2026'),
-  UNIFI_BASE_URL: z.string().url().optional(),
-  UNIFI_API_TOKEN: z.string().optional(),
+  UNIFI_BASE_URL: z
+    .string()
+    .optional()
+    .transform((val) => (val && !val.includes('your-unifi') ? val : undefined)),
+  UNIFI_API_TOKEN: z
+    .string()
+    .optional()
+    .transform((val) => (val && !val.includes('your_unifi') ? val : undefined)),
   UNIFI_IGNORE_SSL: z
     .string()
     .transform((val) => val === 'true' || val === '1')
     .default('false'),
 
-  JISR_HOST_TYPE: z.enum(['cloud', 'local']).default('cloud'),
+  JISR_HOST_TYPE: z
+    .string()
+    .default('cloud')
+    .transform((val) => val.toLowerCase() as 'cloud' | 'local'),
   JISR_CUSTOM_BASE_URL: z.string().url().optional(),
   JISR_API_KEY: z.string().min(1, 'JISR_API_KEY is required for Jisr integration'),
   JISR_SYNC_INTERVAL_MINUTES: z.coerce.number().default(5),
