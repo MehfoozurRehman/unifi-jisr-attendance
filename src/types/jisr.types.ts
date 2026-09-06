@@ -1,18 +1,21 @@
 export type PunchType = 'in' | 'out';
 
 export interface JisrEmployee {
-  id: string | number;
-  code?: string;
-  first_name?: string;
-  last_name?: string;
-  email: string;
+  id: string;
+  code: string;
+  full_name_en?: string;
+  full_name_ar?: string;
+  email?: string;
+  telephone?: string;
+  is_active?: boolean;
   status?: string;
 }
 
 export interface JisrAttendanceLogPayload {
-  employee_id: string | number;
+  employee_id?: string | number;
+  employee_code?: string | number;
   timestamp: string;
-  punch_type: PunchType;
+  punch_type?: PunchType;
   device_id?: string;
   source?: string;
   latitude?: number;
