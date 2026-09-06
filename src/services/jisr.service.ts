@@ -24,6 +24,9 @@ export class JisrService {
       Accept: 'application/json',
       Authorization: `Bearer ${config.JISR_API_KEY}`,
       'api-key': config.JISR_API_KEY,
+      'api-secret': config.JISR_API_SECRET,
+      'client-id': config.JISR_API_KEY,
+      'client-secret': config.JISR_API_SECRET,
     };
   }
 

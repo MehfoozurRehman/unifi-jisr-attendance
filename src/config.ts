@@ -23,10 +23,11 @@ const envSchema = z.object({
 
   JISR_HOST_TYPE: z
     .string()
-    .default('cloud')
+    .default('local')
     .transform((val) => val.toLowerCase() as 'cloud' | 'local'),
   JISR_CUSTOM_BASE_URL: z.string().url().optional(),
-  JISR_API_KEY: z.string().min(1, 'JISR_API_KEY is required for Jisr integration'),
+  JISR_API_KEY: z.string().default('kbmnySRFFoiGJ_2zW8kwcg'),
+  JISR_API_SECRET: z.string().default('gF5vi5OkV-WoPzv1I0MilA'),
   JISR_SYNC_INTERVAL_MINUTES: z.coerce.number().default(5),
 
   DEDUPLICATION_WINDOW_SECONDS: z.coerce.number().default(60),
