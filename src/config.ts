@@ -23,7 +23,7 @@ const envSchema = z.object({
 
   JISR_HOST_TYPE: z
     .string()
-    .default('local')
+    .default('cloud')
     .transform((val) => val.toLowerCase() as 'cloud' | 'local'),
   JISR_CUSTOM_BASE_URL: z.string().url().optional(),
   JISR_API_KEY: z.string().default('kbmnySRFFoiGJ_2zW8kwcg'),
