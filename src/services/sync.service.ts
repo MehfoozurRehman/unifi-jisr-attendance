@@ -113,6 +113,19 @@ export class SyncService {
       }
     }
 
+    const timestampIso = this.extractTimestamp(payload);
+    const eventMs = new Date(timestampIso).getTime();
+    const dedupeKey = email || userName || userId || 'anonymous';
+
+    if (dedupeService.isDuplicate(dedupeKey, eventMs)) {
+      console.log(`[Sync] ⏭️ Duplicate swipe ignored for ${dedupeKey} (within ${config.DEDUPLICATION_WINDOW_SECONDS}s)`);
+      return {
+        status: 'DUPLICATE',
+        reason: `Duplicate swipe ignored within ${config.DEDUPLICATION_WINDOW_SECONDS}s window`,
+        email: email || userName,
+      };
+    }
+
     let employee = null;
     if (email) {
       console.log(`[Sync] Looking up employee in Jisr by email: "${email}"...`);
