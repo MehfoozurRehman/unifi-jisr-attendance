@@ -10,16 +10,16 @@ const envSchema = z.object({
   UNIFI_WEBHOOK_SECRET: z.string().default('unifi-secret-2026'),
   UNIFI_BASE_URL: z
     .string()
-    .optional()
+    .default('https://192.168.8.1')
     .transform((val) => (val && !val.includes('your-unifi') ? val : undefined)),
   UNIFI_API_TOKEN: z
     .string()
-    .optional()
+    .default('5wnFjU6RoXNMFnT9gx3b9K_QKVNlTubJ')
     .transform((val) => (val && !val.includes('your_unifi') ? val : undefined)),
   UNIFI_IGNORE_SSL: z
     .string()
     .transform((val) => val === 'true' || val === '1')
-    .default('false'),
+    .default('true'),
 
   JISR_HOST_TYPE: z
     .string()
