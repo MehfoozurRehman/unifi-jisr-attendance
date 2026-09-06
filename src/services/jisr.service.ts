@@ -26,8 +26,8 @@ export class JisrService {
     }
 
     const authBases = [
-      this.baseUrl,
       'https://apis.jisr.net/api',
+      this.baseUrl,
       'https://api.jisr.net.sa/api',
     ];
 
@@ -55,13 +55,8 @@ export class JisrService {
             console.log(`[Jisr] ✅ Successfully authenticated session at ${base}`);
             return this.accessToken;
           }
-        } else {
-          const errBody = await res.text().catch(() => '');
-          console.warn(`[Jisr] ⚠️ Auth failed at ${base} (HTTP ${res.status}): ${errBody}`);
         }
-      } catch (err: any) {
-        console.warn(`[Jisr] ⚠️ Auth connection error at ${base}: ${err.message}`);
-      }
+      } catch {}
     }
 
     return null;
