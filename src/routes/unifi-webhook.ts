@@ -15,13 +15,14 @@ unifiWebhookRoutes.post('/', async (c) => {
   console.log(`[Webhook] Auth token received: "${token || ''}" (Length: ${token?.length || 0})`);
   console.log(`[Webhook] Expected secret: "${config.UNIFI_WEBHOOK_SECRET}"`);
 
+  const normalizedReceived = token?.trim().toLowerCase();
   const allowedSecrets = new Set([
-    config.UNIFI_WEBHOOK_SECRET,
+    config.UNIFI_WEBHOOK_SECRET.toLowerCase(),
     'unifi-secret-2026',
     'unify-secret-2026',
   ]);
 
-  if (config.UNIFI_WEBHOOK_SECRET && token && !allowedSecrets.has(token.trim())) {
+  if (config.UNIFI_WEBHOOK_SECRET && (!normalizedReceived || !allowedSecrets.has(normalizedReceived))) {
     console.warn(`[Webhook] ⚠️ Unauthorized request. Token mismatch! Received "${token}", but expected "${config.UNIFI_WEBHOOK_SECRET}"`);
     return c.json({ error: 'Unauthorized webhook request' }, 401);
   }
