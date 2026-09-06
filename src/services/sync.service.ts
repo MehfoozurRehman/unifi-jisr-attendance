@@ -197,12 +197,13 @@ export class SyncService {
       };
     }
 
-    console.log(`[Sync] 🎉 Successfully recorded ${punchType.toUpperCase()} punch for ${email} in Jisr!`);
+    const targetIdentifier = email || employee.email || empName;
+    console.log(`[Sync] 🎉 Successfully recorded ${punchType.toUpperCase()} punch for ${targetIdentifier} in Jisr!`);
 
     return {
       status: 'PROCESSED',
       employee_id: employee.id,
-      email,
+      email: targetIdentifier,
       punch_type: punchType,
       timestamp: timestampIso,
     };
