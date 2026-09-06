@@ -106,6 +106,8 @@ export class SyncService {
       }
       if (firstEvent.user_id) {
         userId = firstEvent.user_id;
+      } else if (firstEvent.user) {
+        userId = firstEvent.user;
       }
       if (firstEvent.user_email) {
         email = firstEvent.user_email;
@@ -115,9 +117,9 @@ export class SyncService {
           const parsedCustom = typeof firstEvent.data.custom_content === 'string'
             ? JSON.parse(firstEvent.data.custom_content)
             : firstEvent.data.custom_content;
-          if (parsedCustom.user_email) email = parsedCustom.user_email;
-          if (parsedCustom.user_name) userName = parsedCustom.user_name;
-          if (parsedCustom.user_id) userId = parsedCustom.user_id;
+          if (parsedCustom.user_email && !parsedCustom.user_email.includes('{')) email = parsedCustom.user_email;
+          if (parsedCustom.user_name && !parsedCustom.user_name.includes('{')) userName = parsedCustom.user_name;
+          if (parsedCustom.user_id && !parsedCustom.user_id.includes('{')) userId = parsedCustom.user_id;
         } catch {}
       }
     }

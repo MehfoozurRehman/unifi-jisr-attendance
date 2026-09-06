@@ -76,7 +76,7 @@ export class JisrService {
 
     while (page <= 20) {
       try {
-        const url = `${this.baseUrl}/openapi/v1/employees?status=active&rpp=100&page=${page}`;
+        const url = `${this.baseUrl}/openapi/v1/employees?rpp=100&page=${page}`;
         const response = await fetch(url, {
           headers: {
             'Access-Token': token,
@@ -147,19 +147,45 @@ export class JisrService {
       }
     }
 
-    const cleanTokens = cleanName.split(/\s+/).filter(Boolean);
-    if (cleanTokens.length > 0) {
-      for (const [key, emp] of this.employeeCache.entries()) {
-        if (!key.startsWith('name:')) continue;
-        const cachedName = key.replace('name:', '');
-        const matchedTokens = cleanTokens.filter((token) => cachedName.includes(token));
-        if (matchedTokens.length >= 2 || (cleanTokens.length === 1 && matchedTokens.length === 1 && tokenMatchesStrongly(cleanTokens[0], cachedName))) {
-          return emp;
+    const cleanTokens = cleanName.split(/\s+/).filter((t) => t.length > 2);
+    if (cleanTokens.length === 0) return null;
+
+    let bestMatch: JisrEmployee | null = null;
+    let maxScore = 0;
+
+    const seenEmployees = new Set<string>();
+
+    for (const emp of this.employeeCache.values()) {
+      if (seenEmployees.has(emp.id)) continue;
+      seenEmployees.add(emp.id);
+
+      let score = 0;
+      const en = (emp.full_name_en || '').toLowerCase();
+      const email = (emp.email || '').toLowerCase();
+      const emailPrefix = email.split('@')[0];
+
+      const enTokens = en.split(/\s+/).filter((t) => t.length > 1);
+      const emailTokens = emailPrefix.split(/[._-]/).filter((t) => t.length > 1);
+
+      for (const q of cleanTokens) {
+        if (enTokens.some((e) => e === q || (e.length >= 4 && (e.includes(q) || q.includes(e))))) {
+          score += 3;
+        } else if (emailTokens.some((e) => e === q || (e.length >= 4 && (e.includes(q) || q.includes(e))))) {
+          score += 3;
+        } else if (en.includes(q) && q.length >= 4) {
+          score += 2;
+        } else if (email.includes(q) && q.length >= 4) {
+          score += 2;
         }
+      }
+
+      if (score > maxScore) {
+        maxScore = score;
+        bestMatch = emp;
       }
     }
 
-    return null;
+    return maxScore >= 3 ? bestMatch : null;
   }
 
   public async getEmployeeByEmail(email: string): Promise<JisrEmployee | null> {
