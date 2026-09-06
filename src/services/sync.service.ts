@@ -89,6 +89,16 @@ export class SyncService {
     let userId = payload.actor?.id || payload.data?.user_id;
 
     const rawAlarm = payload as any;
+    if (rawAlarm.user_email) {
+      email = rawAlarm.user_email;
+    }
+    if (rawAlarm.user_name) {
+      userName = rawAlarm.user_name;
+    }
+    if (rawAlarm.user_id) {
+      userId = rawAlarm.user_id;
+    }
+
     if (Array.isArray(rawAlarm.events) && rawAlarm.events.length > 0) {
       const firstEvent = rawAlarm.events[0];
       if (firstEvent.user_name) {
@@ -99,6 +109,16 @@ export class SyncService {
       }
       if (firstEvent.user_email) {
         email = firstEvent.user_email;
+      }
+      if (firstEvent.data?.custom_content) {
+        try {
+          const parsedCustom = typeof firstEvent.data.custom_content === 'string'
+            ? JSON.parse(firstEvent.data.custom_content)
+            : firstEvent.data.custom_content;
+          if (parsedCustom.user_email) email = parsedCustom.user_email;
+          if (parsedCustom.user_name) userName = parsedCustom.user_name;
+          if (parsedCustom.user_id) userId = parsedCustom.user_id;
+        } catch {}
       }
     }
 
