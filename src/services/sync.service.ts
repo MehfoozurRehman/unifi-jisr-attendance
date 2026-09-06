@@ -45,16 +45,26 @@ export class SyncService {
   }
 
   public extractTimestamp(payload: UnifiWebhookPayload): string {
-    const rawTime =
-      payload.timestamp ||
-      payload.data?.timestamp ||
-      Date.now();
+    const rawAlarm = payload as any;
+    let rawTime: any = null;
 
-    const date = typeof rawTime === 'number'
-      ? new Date(rawTime > 1e11 ? rawTime : rawTime * 1000)
-      : new Date(rawTime);
+    if (Array.isArray(rawAlarm.events) && rawAlarm.events.length > 0 && rawAlarm.events[0].time) {
+      rawTime = rawAlarm.events[0].time;
+    } else {
+      rawTime =
+        payload.timestamp ||
+        payload.data?.timestamp ||
+        Date.now();
+    }
 
-    return !isNaN(date.getTime()) ? date.toISOString() : new Date().toISOString();
+    const numericTime = Number(rawTime);
+    if (!isNaN(numericTime) && numericTime > 0) {
+      const ms = numericTime > 1e11 ? numericTime : numericTime * 1000;
+      return new Date(ms).toISOString();
+    }
+
+    const parsedDate = new Date(rawTime);
+    return !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
   }
 
   public async handleUnifiEvent(payload: UnifiWebhookPayload): Promise<ProcessResult> {
