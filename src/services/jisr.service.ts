@@ -21,7 +21,8 @@ export class JisrService {
   private getHeaders(): Record<string, string> {
     return {
       'Content-Type': 'application/json',
-      Accept: 'application/json',
+      Accept: 'application/json, text/plain, */*',
+      'User-Agent': 'UniFi-Jisr-Integration/1.0',
       Authorization: `Bearer ${config.JISR_API_KEY}`,
       'api-key': config.JISR_API_KEY,
       'api-secret': config.JISR_API_SECRET,
