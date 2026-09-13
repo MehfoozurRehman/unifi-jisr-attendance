@@ -17,19 +17,26 @@ export class UnifiClient implements UnifiDirectory {
       { Authorization: `Bearer ${this.config.UNIFI_API_TOKEN}`, Accept: 'application/json' },
       { 'X-API-KEY': this.config.UNIFI_API_TOKEN, Accept: 'application/json' },
     ];
+    let lastError = 'no matching email returned';
     for (const url of urls) for (const headers of headersList) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.config.REQUEST_TIMEOUT_MS);
       try {
         const response = await fetch(url, { headers, signal: controller.signal });
-        if (!response.ok) continue;
+        if (!response.ok) {
+          lastError = `${response.status} ${response.statusText}`;
+          continue;
+        }
         const body = await response.json() as any, data = body?.data ?? body;
         const email = String(data?.email ?? data?.user_email ?? data?.upn ?? '').trim().toLowerCase();
         if (email && email.includes('@')) { this.cache.set(userId, email); return email; }
-      } catch {}
+        lastError = 'response did not contain an email';
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
       finally { clearTimeout(timeout); }
     }
-    this.cache.set(userId, null);
+    console.error(`[UniFi] Email lookup failed for user ${userId}: ${lastError}`);
     return null;
   }
 }
