@@ -9,6 +9,7 @@ export class UnifiClient implements UnifiDirectory {
     const base = this.config.UNIFI_BASE_URL.replace(/\/$/, ''), host = base.replace(/:\d+$/, '');
     const urls = [...new Set([
       `${base}/api/v1/developer/users/${userId}`,
+      `${host}:12455/api/v1/developer/users/${userId}`,
       `${host}:12445/api/v1/developer/users/${userId}`,
       `${base}/proxy/access/api/v2/users/${userId}`,
       `${base}/proxy/access/integration/v1/users/${userId}`,
