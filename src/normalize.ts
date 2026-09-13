@@ -76,7 +76,7 @@ export function normalize(raw: unknown, receivedAt: number, config: Config): Nor
   else if (!occurredAt) { status = 'held'; reason = 'Missing, invalid, or timezone-free event timestamp'; }
   else if (occurredAt > receivedAt + config.MAX_FUTURE_SKEW_MS) { status = 'held'; reason = 'Event timestamp is in the future; check device clock'; }
   else if (receivedAt - occurredAt > config.MAX_EVENT_AGE_MS) { status = 'held'; reason = 'Event is older than automatic processing window'; }
-  else if (!email && !userId && !name) { status = 'held'; reason = 'Missing employee identity'; }
+  else if (!email) { status = 'held'; reason = 'Employee email is missing; enter the Jisr email manually'; }
   else if (!direction) { status = 'held'; reason = 'Unknown or conflicting direction; no attendance action guessed'; }
   return {
     sourceId, occurredAt, timeSource: selected?.[0] ?? null, sourceTime: selected ? String(selected[1]) : null,

@@ -25,11 +25,11 @@ Open the service domain to use the dashboard. It shows the event time in `Asia/R
 - Repeated identical source events are deduplicated permanently.
 - Repeated same-direction events are skipped until an opposite-direction event occurs.
 - Opposite-direction events are preserved even when they occur seconds apart.
-- Employee matching uses a permanent UniFi mapping, exact email, exact full name, or a unique multi-part name match. Ambiguous names are held.
+- Employee matching uses the employee email only. Events without an email are held until the operator supplies the Jisr email manually.
 - A network interruption during submission moves the punch to reconciliation. It is never blindly resent.
 - A punch is only marked confirmed after Jisr reports it as successful.
 
-When an employee cannot be matched safely, use **Match employee** on the held event. The dashboard stores a permanent UniFi-user-to-Jisr-employee mapping and retries that event through the normal protected queue.
+When an event has no employee email, use **Enter employee email** on the held event. The dashboard attaches the selected Jisr email to that event and retries it through the normal protected queue.
 
 ## Local verification
 

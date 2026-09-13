@@ -74,22 +74,9 @@ export class Store {
     });
   }
   match(event: EventRow): Employee | null {
-    if (event.userId) {
-      const mapped = this.db.prepare('SELECT e.* FROM employees e JOIN identity_mappings m ON e.id=m.employeeId WHERE m.userId=? AND e.active=1').get(event.userId) as unknown as Employee | undefined;
-      if (mapped) return mapped;
-    }
-    const matches = event.email
-      ? this.db.prepare('SELECT * FROM employees WHERE lower(email)=? AND active=1').all(event.email.toLowerCase().trim())
-      : event.name ? this.db.prepare('SELECT * FROM employees WHERE lower(trim(name))=? AND active=1').all(event.name.toLowerCase().trim()) : [];
-    if (matches.length === 1) return matches[0] as unknown as Employee;
-    if (event.email || !event.name) return null;
-    const tokens = event.name.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [];
-    if (tokens.length < 2) return null;
-    const candidates = (this.db.prepare('SELECT * FROM employees WHERE active=1').all() as unknown as Employee[]).filter(employee => {
-      const compact = employee.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      return tokens.every(token => compact.includes(token));
-    });
-    return candidates.length === 1 ? candidates[0] : null;
+    if (!event.email) return null;
+    const matches = this.db.prepare('SELECT * FROM employees WHERE lower(email)=? AND active=1').all(event.email.toLowerCase().trim());
+    return matches.length === 1 ? matches[0] as unknown as Employee : null;
   }
   ready(now: number): EventRow[] {
     return this.db.prepare("SELECT * FROM events WHERE status='queued' AND nextAttemptAt<=? ORDER BY occurredAt,id LIMIT 100").all(now) as unknown as EventRow[];
@@ -120,8 +107,12 @@ export class Store {
     return Object.fromEntries(this.db.prepare('SELECT status,count(*) AS n FROM events GROUP BY status').all().map(r => [r.status, r.n]));
   }
   attempts(id: number) { return this.db.prepare('SELECT * FROM attempts WHERE eventId=? ORDER BY at,id').all(id); }
-  employees(q = '') { return this.db.prepare("SELECT e.*,m.userId FROM employees e LEFT JOIN identity_mappings m ON e.id=m.employeeId WHERE e.active=1 AND (e.name LIKE ? OR coalesce(e.email,'') LIKE ? OR e.code LIKE ?) ORDER BY e.name LIMIT 100").all(`%${q}%`, `%${q}%`, `%${q}%`); }
-  map(userId: string, employeeId: string) { this.db.prepare('INSERT INTO identity_mappings(userId,employeeId) VALUES(?,?) ON CONFLICT(userId) DO UPDATE SET employeeId=excluded.employeeId').run(userId, employeeId); }
+  employees(q = '') { return this.db.prepare("SELECT * FROM employees WHERE active=1 AND (coalesce(email,'') LIKE ? OR code LIKE ?) ORDER BY email LIMIT 100").all(`%${q}%`, `%${q}%`); }
+  map(eventId: number, employeeId: string) {
+    const employee = this.db.prepare('SELECT * FROM employees WHERE id=? AND active=1').get(employeeId) as unknown as Employee | undefined;
+    if (!employee?.email) throw new Error('Selected employee has no email');
+    this.db.prepare("UPDATE events SET email=?,employeeId=?,employeeCode=?,employeeName=?,reason=?,updatedAt=? WHERE id=? AND status='held'").run(employee.email, employee.id, employee.code, employee.name, 'Email supplied manually; queued for processing', Date.now(), eventId);
+  }
   retry(id: number, now: number) { this.db.prepare("UPDATE events SET status='queued',reason='Manually approved for retry',nextAttemptAt=?,updatedAt=? WHERE id=? AND status IN ('held','failed') AND punchId IS NULL").run(now, now, id); }
   session(token: string, expiresAt: number) { this.db.prepare('INSERT INTO sessions(token,expiresAt) VALUES(?,?)').run(token, expiresAt); }
   validSession(token: string, now: number) { this.db.prepare('DELETE FROM sessions WHERE expiresAt<?').run(now); return Boolean(this.db.prepare('SELECT 1 FROM sessions WHERE token=? AND expiresAt>=?').get(token, now)); }
