@@ -41,3 +41,4 @@ export interface JisrGateway {
   submit(punch: Punch): Promise<Submission>;
   confirm(punch: Punch): Promise<Confirmation>;
 }
+export interface UnifiDirectory { emailForUser(userId: string): Promise<string | null> }

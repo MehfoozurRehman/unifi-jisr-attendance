@@ -4,9 +4,10 @@ import { createApp } from './app.js';
 import { JisrClient } from './jisr.js';
 import { Store } from './store.js';
 import { Worker } from './worker.js';
+import { UnifiClient } from './unifi.js';
 
 const store = new Store(config.DATABASE_PATH);
-const worker = new Worker(store, new JisrClient(config), config);
+const worker = new Worker(store, new JisrClient(config), config, Date.now, new UnifiClient(config));
 store.recover(Date.now());
 const run = () => worker.tick().catch(error => store.set('workerError', String(error)));
 const timer = setInterval(run, config.WORKER_INTERVAL_MS);
