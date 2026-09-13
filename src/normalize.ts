@@ -14,6 +14,10 @@ function stable(value: unknown): string {
 }
 export const hash = (value: unknown) => createHash('sha256').update(stable(value)).digest('hex');
 
+export function normalizePersonName(value: string) {
+  return value.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
 export function parseTimestamp(value: unknown): number | null {
   if (typeof value !== 'number' && typeof value !== 'string') return null;
   const text = String(value).trim();
@@ -76,7 +80,7 @@ export function normalize(raw: unknown, receivedAt: number, config: Config): Nor
   else if (!occurredAt) { status = 'held'; reason = 'Missing, invalid, or timezone-free event timestamp'; }
   else if (occurredAt > receivedAt + config.MAX_FUTURE_SKEW_MS) { status = 'held'; reason = 'Event timestamp is in the future; check device clock'; }
   else if (receivedAt - occurredAt > config.MAX_EVENT_AGE_MS) { status = 'held'; reason = 'Event is older than automatic processing window'; }
-  else if (!email) { status = 'held'; reason = 'Employee email is missing; enter the Jisr email manually'; }
+  else if (!email && !name) { status = 'held'; reason = 'Employee email and full name are missing; manual identity required'; }
   else if (!direction) { status = 'held'; reason = 'Unknown or conflicting direction; no attendance action guessed'; }
   return {
     sourceId, occurredAt, timeSource: selected?.[0] ?? null, sourceTime: selected ? String(selected[1]) : null,
