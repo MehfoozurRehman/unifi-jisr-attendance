@@ -113,7 +113,7 @@ export class Store {
     return Object.fromEntries(this.db.prepare('SELECT status,count(*) AS n FROM events GROUP BY status').all().map(r => [r.status, r.n]));
   }
   attempts(id: number) { return this.db.prepare('SELECT * FROM attempts WHERE eventId=? ORDER BY at,id').all(id); }
-  employees(q = '') { return this.db.prepare("SELECT * FROM employees WHERE active=1 AND (coalesce(email,'') LIKE ? OR code LIKE ?) ORDER BY email LIMIT 100").all(`%${q}%`, `%${q}%`); }
+  employees(q = '') { return this.db.prepare("SELECT * FROM employees WHERE active=1 AND (coalesce(email,'') LIKE ? OR code LIKE ? OR name LIKE ?) ORDER BY email LIMIT 100").all(`%${q}%`, `%${q}%`, `%${q}%`); }
   map(eventId: number, employeeId: string) {
     const employee = this.db.prepare('SELECT * FROM employees WHERE id=? AND active=1').get(employeeId) as unknown as Employee | undefined;
     if (!employee?.email) throw new Error('Selected employee has no email');
