@@ -58,7 +58,8 @@ export class Worker {
       const result = await this.gateway.confirm(JSON.parse(event.request!));
       this.store.transaction(() => {
         this.store.audit(event.id, 'confirm', result.outcome, result, this.clock());
-        this.store.update(event.id, { status: result.outcome === 'pending' ? event.status === 'failed' ? 'submitted' : event.status : result.outcome, reason: result.message, nextAttemptAt: this.clock() + this.config.RECONCILE_INTERVAL_MS }, this.clock());
+        const status = result.outcome === 'pending' ? (event.status === 'failed' ? 'submitted' : event.status) : result.outcome;
+        this.store.update(event.id, { status, reason: result.message, nextAttemptAt: this.clock() + this.config.RECONCILE_INTERVAL_MS }, this.clock());
       });
     } catch (e) {
       this.store.update(event.id, { reason: `Confirmation unavailable: ${String(e)}`, nextAttemptAt: this.clock() + this.config.RECONCILE_INTERVAL_MS }, this.clock());
