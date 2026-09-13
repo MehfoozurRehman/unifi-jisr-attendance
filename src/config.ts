@@ -1,5 +1,5 @@
 export const config = {
-  PORT: 3000,
+  PORT: Number(process.env.PORT ?? 3000),
   DATABASE_PATH: './data/attendance.sqlite',
   TIMEZONE: 'Asia/Riyadh',
   UNIFI_WEBHOOK_SECRET: 'Unifi-secret-2026',
