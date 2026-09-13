@@ -82,7 +82,7 @@ export class Store {
     return this.db.prepare("SELECT * FROM events WHERE status='queued' AND nextAttemptAt<=? ORDER BY occurredAt,id LIMIT 100").all(now) as unknown as EventRow[];
   }
   unresolved(now: number): EventRow[] {
-    return this.db.prepare("SELECT * FROM events WHERE status IN ('submitted','uncertain') AND nextAttemptAt<=? ORDER BY nextAttemptAt,id LIMIT 20").all(now) as unknown as EventRow[];
+    return this.db.prepare("SELECT * FROM events WHERE status IN ('submitted','uncertain','failed') AND punchId IS NOT NULL AND nextAttemptAt<=? ORDER BY nextAttemptAt,id LIMIT 20").all(now) as unknown as EventRow[];
   }
   beginSend(event: EventRow, punch: Punch, now: number): boolean {
     return this.transaction(() => {
