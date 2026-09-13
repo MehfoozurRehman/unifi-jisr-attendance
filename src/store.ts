@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Config } from './config.js';
 import type { Employee, EventRow, EventStatus, Punch } from './domain.js';
-import { hash, normalize, splitEvents } from './normalize.js';
+import { hash, normalize, normalizePersonName, splitEvents } from './normalize.js';
 
 export class Store {
   readonly db: DatabaseSync;
@@ -74,8 +74,14 @@ export class Store {
     });
   }
   match(event: EventRow): Employee | null {
-    if (!event.email) return null;
-    const matches = this.db.prepare('SELECT * FROM employees WHERE lower(email)=? AND active=1').all(event.email.toLowerCase().trim());
+    if (event.email) {
+      const matches = this.db.prepare('SELECT * FROM employees WHERE lower(email)=? AND active=1').all(event.email.toLowerCase().trim());
+      if (matches.length === 1) return matches[0] as unknown as Employee;
+    }
+    if (!event.name) return null;
+    const employees = this.db.prepare('SELECT * FROM employees WHERE active=1').all() as unknown as Employee[];
+    const normalizedName = normalizePersonName(event.name);
+    const matches = employees.filter(employee => normalizePersonName(employee.name) === normalizedName);
     return matches.length === 1 ? matches[0] as unknown as Employee : null;
   }
   ready(now: number): EventRow[] {
