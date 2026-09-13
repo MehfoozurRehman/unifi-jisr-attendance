@@ -2,6 +2,13 @@ import type { Config } from './config.js';
 import type { Confirmation, Employee, JisrGateway, Punch, Submission } from './domain.js';
 
 const text = (value: unknown) => typeof value === 'string' ? value : '';
+const wallTime = (instant: number, timezone: string) => new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date(instant)).replace(',', '');
+const storedTime = (value: string, timezone: string) => {
+  const source = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(source) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(source)) return source.slice(0, 19).replace('T', ' ');
+  const instant = Date.parse(source);
+  return Number.isFinite(instant) ? wallTime(instant, timezone) : '';
+};
 
 export class JisrClient implements JisrGateway {
   private token = '';
@@ -60,7 +67,9 @@ export class JisrClient implements JisrGateway {
       if (found && status === 'success') {
         const actual = Date.parse(text(found.punch_time));
         const expected = Date.parse(punch.punch_time);
-        if (!Number.isFinite(actual) || Math.abs(actual - expected) > 1_000) return { outcome: 'failed', message: 'Jisr stored a different punch time; manual review required', response: found };
+        const sameInstant = Number.isFinite(actual) && Number.isFinite(expected) && Math.abs(actual - expected) <= 1_000;
+        const sameRiyadhTime = storedTime(text(found.punch_time), this.config.TIMEZONE) === wallTime(expected, this.config.TIMEZONE);
+        if (!sameInstant && !sameRiyadhTime) return { outcome: 'failed', message: 'Jisr stored a different punch time; manual review required', response: found };
         return { outcome: 'confirmed', message: 'Confirmed by Jisr with matching employee and time', response: found };
       }
       if (found) return { outcome: 'failed', message: text(found.error) || 'Jisr processing failed', response: found };
