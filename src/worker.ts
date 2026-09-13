@@ -25,12 +25,13 @@ export class Worker {
     if (!this.store.setting('employeesRefreshedAt')) {
       this.store.update(event.id, { reason: 'Waiting for employee directory', nextAttemptAt: now + 30_000 }, now); return;
     }
-    if (!event.email && event.userId && this.unifi) {
+    let employee = this.store.match(event);
+    if (!employee && !event.email && event.userId && this.unifi) {
       const email = await this.unifi.emailForUser(event.userId);
       if (email) this.store.update(event.id, { email, status: 'queued', reason: 'Email resolved from UniFi user directory', nextAttemptAt: now }, now);
       event = this.store.event(event.id)!;
+      employee = this.store.match(event);
     }
-    const employee = this.store.match(event);
     if (!employee) { this.store.update(event.id, { status: 'held', reason: 'No unique active employee match by exact email or full name; exact identity required' }, now); return; }
     this.store.update(event.id, { employeeId: employee.id, employeeCode: employee.code, employeeName: employee.name }, now);
     const unresolved = this.store.db.prepare("SELECT id FROM events WHERE employeeId=? AND id<>? AND status IN ('sending','submitted','uncertain') LIMIT 1").get(employee.id, event.id);
