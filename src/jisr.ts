@@ -67,10 +67,10 @@ export class JisrClient implements JisrGateway {
       if (found && status === 'success') {
         const actual = Date.parse(text(found.punch_time));
         const expected = Date.parse(punch.punch_time);
-        const sameInstant = Number.isFinite(actual) && Number.isFinite(expected) && Math.abs(actual - expected) <= 1_000;
+        const sameInstant = Number.isFinite(actual) && Number.isFinite(expected) && Math.floor(actual / 60_000) === Math.floor(expected / 60_000);
         const sameRiyadhTime = storedTime(text(found.punch_time), this.config.TIMEZONE) === wallTime(expected, this.config.TIMEZONE);
         if (!sameInstant && !sameRiyadhTime) return { outcome: 'failed', message: 'Jisr stored a different punch time; manual review required', response: found };
-        return { outcome: 'confirmed', message: 'Confirmed by Jisr with matching employee and time', response: found };
+        return { outcome: 'confirmed', message: 'Confirmed by Jisr with matching employee and minute', response: found };
       }
       if (found) return { outcome: 'failed', message: text(found.error) || 'Jisr processing failed', response: found };
     }
