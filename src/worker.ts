@@ -1,10 +1,10 @@
 import type { Config } from './config.js';
-import type { EventRow, JisrGateway, Punch } from './domain.js';
+import type { EventRow, JisrGateway, Punch, UnifiDirectory } from './domain.js';
 import { Store } from './store.js';
 
 export class Worker {
   private busy = false;
-  constructor(readonly store: Store, readonly gateway: JisrGateway, readonly config: Config, readonly clock = Date.now) {}
+  constructor(readonly store: Store, readonly gateway: JisrGateway, readonly config: Config, readonly clock = Date.now, readonly unifi?: UnifiDirectory) {}
   async tick() {
     if (this.busy) return;
     this.busy = true;
@@ -24,6 +24,11 @@ export class Worker {
     const now = this.clock();
     if (!this.store.setting('employeesRefreshedAt')) {
       this.store.update(event.id, { reason: 'Waiting for employee directory', nextAttemptAt: now + 30_000 }, now); return;
+    }
+    if (!event.email && event.userId && this.unifi) {
+      const email = await this.unifi.emailForUser(event.userId);
+      if (email) this.store.update(event.id, { email, reason: 'Email resolved from UniFi user directory' }, now);
+      event = this.store.event(event.id)!;
     }
     const employee = this.store.match(event);
     if (!employee) { this.store.update(event.id, { status: 'held', reason: 'No unique active employee match; exact identity required' }, now); return; }
