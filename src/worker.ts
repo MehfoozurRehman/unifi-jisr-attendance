@@ -27,7 +27,7 @@ export class Worker {
     }
     if (!event.email && event.userId && this.unifi) {
       const email = await this.unifi.emailForUser(event.userId);
-      if (email) this.store.update(event.id, { email, reason: 'Email resolved from UniFi user directory' }, now);
+      if (email) this.store.update(event.id, { email, status: 'queued', reason: 'Email resolved from UniFi user directory', nextAttemptAt: now }, now);
       event = this.store.event(event.id)!;
     }
     const employee = this.store.match(event);
