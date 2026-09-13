@@ -1,63 +1,23 @@
-import { z } from 'zod';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const envSchema = z.object({
-  PORT: z.coerce.number().default(3000),
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  
-  UNIFI_WEBHOOK_SECRET: z.string().default('unifi-secret-2026'),
-  UNIFI_BASE_URL: z
-    .string()
-    .default('https://192.168.8.1')
-    .transform((val) => (val && !val.includes('your-unifi') ? val : undefined)),
-  UNIFI_API_TOKEN: z
-    .string()
-    .default('5wnFjU6RoXNMFnT9gx3b9K_QKVNlTubJ')
-    .transform((val) => (val && !val.includes('your_unifi') ? val : undefined)),
-  UNIFI_IGNORE_SSL: z
-    .string()
-    .transform((val) => val === 'true' || val === '1')
-    .default('true'),
-
-  JISR_HOST_TYPE: z
-    .string()
-    .default('cloud')
-    .transform((val) => val.toLowerCase() as 'cloud' | 'local'),
-  JISR_CUSTOM_BASE_URL: z.string().url().optional(),
-  JISR_SLUG: z.string().default('zood'),
-  JISR_API_KEY: z.string().default('kbmnySRFFoiGJ_2zW8kwcg'),
-  JISR_API_SECRET: z.string().default('gF5vi5OkV-WoPzv1I0MilA'),
-  JISR_SYNC_INTERVAL_MINUTES: z.coerce.number().default(5),
-
-  DEDUPLICATION_WINDOW_SECONDS: z.coerce.number().default(60),
-  IN_KEYWORDS: z
-    .string()
-    .default('in,entry,entrance,check-in,arrival,start')
-    .transform((val) => val.split(',').map((k) => k.trim().toLowerCase())),
-  OUT_KEYWORDS: z
-    .string()
-    .default('out,exit,departure,check-out,leave')
-    .transform((val) => val.split(',').map((k) => k.trim().toLowerCase())),
-  DEFAULT_DIRECTION: z.enum(['in', 'out', 'toggle']).default('in'),
-});
-
-export type Config = z.infer<typeof envSchema>;
-
-function loadConfig(): Config {
-  const parsed = envSchema.safeParse(process.env);
-  if (!parsed.success) {
-    console.error('❌ Invalid environment configuration:', parsed.error.format());
-
-    if (process.env.NODE_ENV === 'test') {
-      return envSchema.parse({
-        JISR_API_KEY: 'test-key',
-      });
-    }
-    process.exit(1);
-  }
-  return parsed.data;
-}
-
-export const config = loadConfig();
+export const config = {
+  PORT: 3000,
+  DATABASE_PATH: './data/attendance.sqlite',
+  TIMEZONE: 'Asia/Riyadh',
+  UNIFI_WEBHOOK_SECRET: 'Unifi-secret-2026',
+  UNIFI_BASE_URL: 'https://192.168.8.1',
+  UNIFI_API_TOKEN: '5wnFjU6RoXNMFnT9gx3b9K_QKVNlTubJ',
+  JISR_BASE_URL: 'https://apis.jisr.net/api',
+  JISR_SLUG: 'zood',
+  JISR_API_KEY: 'kbmnySRFFoiGJ_2zW8kwcg',
+  JISR_API_SECRET: 'gF5vi5OkV-WoPzv1I0MilA',
+  DASHBOARD_PASSWORD: 'gF5vi5OkV-WoPzv1I0MilA',
+  EMPLOYEE_REFRESH_MS: 300_000,
+  REQUEST_TIMEOUT_MS: 10_000,
+  WORKER_INTERVAL_MS: 1_000,
+  REORDER_WINDOW_MS: 5_000,
+  MAX_FUTURE_SKEW_MS: 60_000,
+  MAX_EVENT_AGE_MS: 604_800_000,
+  RECONCILE_INTERVAL_MS: 30_000,
+  SESSION_TTL_MS: 43_200_000,
+  READER_DIRECTIONS: {} as Record<string, 'in' | 'out'>,
+};
+export type Config = typeof config;
