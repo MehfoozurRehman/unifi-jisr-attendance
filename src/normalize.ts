@@ -63,7 +63,7 @@ export function normalize(raw: unknown, receivedAt: number, config: Config): Nor
   const email = str(actor.email, d.user_email, e.user_email, custom.user_email)?.toLowerCase() ?? null;
   const userId = str(actor.id, d.user_id, e.user_id, e.user, custom.user_id);
   const name = str(actor.name, d.user_name, e.user_name, custom.user_name);
-  const sourceId = str(e.event_id, alarmType ? null : e.id, d.event_id);
+  const sourceId = str(e.event_id, d.event_id, alarmType ? null : e.id);
   const credential = str(e.credential_type, d.credential_type)?.toUpperCase();
   const physicalCredential = credential && ['NFC', 'FACE', 'PIN_CODE', 'WALLET_NFC_APPLE', 'WALLET_NFC_GOOGLE', 'MOBILE_TAP'].includes(credential);
   const alarmGranted = type === 'access.unlocks.location_unlocked' && physicalCredential && !str(e.admin) && !str(e.emergency_mode);
