@@ -1,122 +1,48 @@
-# UniFi Access to Jisr HR Attendance Middleware
+# UniFi → Jisr Attendance
 
-High-performance attendance synchronization middleware built with **Hono** and **TypeScript**, specifically designed for seamless deployment on **Railway** (or Docker).
+One Railway service receives UniFi Access events, stores every delivery in SQLite, processes validated physical-access events in order, submits them to Jisr, and serves the React operations dashboard.
 
-This service receives real-time NFC / card swipe events from **UniFi Access**, correlates employees with **Jisr HRMS** by matching work email addresses, determines punch direction (Check-In vs. Check-Out), and automatically records attendance logs into Jisr.
+## Production deployment
 
----
+Deploy the repository using its Dockerfile. The service listens on port `3000`. Add a Railway persistent volume mounted at `/app/data`; the attendance database is `/app/data/attendance.sqlite`. Run exactly one replica because SQLite and the ordered punch worker are intentionally single-writer.
 
-## 📋 Architecture & Data Flow
+The existing UniFi webhook can continue using either endpoint:
 
-```
-UniFi Access (Card Reader Swipe)
-       │
-       ▼ (Webhook: access.door.unlock)
-Railway Deployment (`POST /api/webhooks/unifi`)
-       ├── 1. Validates webhook token / secret
-       ├── 2. Ignores rejected/failed attempts
-       ├── 3. De-duplicates rapid double-swipes
-       ├── 4. Resolves employee by email
-       ├── 5. Determines IN vs OUT based on reader/door name
-       └── 6. Pushes punch to Jisr API (`POST /api/attendance/logs`)
-```
+- `POST /api/webhook/unifi`
+- `POST /api/webhooks/unifi`
 
----
+The webhook secret and all integration values are defined directly in `src/config.ts`, as requested. No environment variables are read.
 
-## 🚀 Quick Setup & Deployment to Railway
+Open the service domain to use the dashboard. It shows the event time in `Asia/Riyadh`, the source direction, matching decision, queue state, Jisr submission state, and final confirmation. Held events are never guessed or submitted automatically.
 
-### 1. Push to GitHub
-Deploy directly by connecting this repository to Railway:
-1. Go to [Railway.app](https://railway.app).
-2. Click **New Project** > **Deploy from GitHub repo** and select this repo.
-3. Railway will automatically detect the `Dockerfile` and build the container.
+## Processing rules
 
-### 2. Configure Environment Variables in Railway
-Under your Railway project **Variables** tab, set:
+- Every HTTP delivery and every item in a UniFi batch is committed before processing.
+- UniFi Unix timestamps are treated as source instants; receipt time is never substituted.
+- `entered` is IN and `exited` is OUT.
+- FACE, NFC, PIN, wallet NFC, and mobile tap are physical attendance credentials.
+- Remote button, call, administrative, emergency, failed, malformed, stale, future, or ambiguous events are retained but not punched.
+- Repeated identical source events are deduplicated permanently.
+- Repeated same-direction events are skipped until an opposite-direction event occurs.
+- Opposite-direction events are preserved even when they occur seconds apart.
+- Employee matching uses a permanent UniFi mapping, exact email, exact full name, or a unique multi-part name match. Ambiguous names are held.
+- A network interruption during submission moves the punch to reconciliation. It is never blindly resent.
+- A punch is only marked confirmed after Jisr reports it as successful.
 
-| Variable | Description | Example / Default |
-|---|---|---|
-| `PORT` | Container listening port (Railway sets this automatically) | `3000` |
-| `NODE_ENV` | Environment mode | `production` |
-| `JISR_HOST_TYPE` | Jisr server type | `cloud` (or `local` if Saudi hosted) |
-| `JISR_API_KEY` | **Required**: Jisr Open API Key / Bearer Token | `your_jisr_api_key` |
-| `UNIFI_WEBHOOK_SECRET` | Secret token to authenticate UniFi webhook requests | `super_secret_token_123` |
-| `UNIFI_BASE_URL` | *(Optional)* UniFi console URL for user lookups | `https://udm.local:12445` |
-| `UNIFI_API_TOKEN` | *(Optional)* UniFi developer API token | `your_unifi_token` |
-| `DEDUPLICATION_WINDOW_SECONDS` | Ignore rapid repeat swipes from same user | `60` |
-| `IN_KEYWORDS` | Keywords to classify reader/door as IN | `in,entry,entrance,check-in` |
-| `OUT_KEYWORDS` | Keywords to classify reader/door as OUT | `out,exit,departure,check-out` |
-| `DEFAULT_DIRECTION` | Fallback direction if keyword not matched | `in` |
+When an employee cannot be matched safely, use **Match employee** on the held event. The dashboard stores a permanent UniFi-user-to-Jisr-employee mapping and retries that event through the normal protected queue.
 
----
+## Local verification
 
-## 🔑 What You Need from Jisr
+The test suite uses in-memory SQLite and a fake Jisr gateway. It never contacts the real company integrations.
 
-1. **Host Environment**:
-   - If the client's Jisr portal URL has `.jisr.net.sa`, set `JISR_HOST_TYPE=local` (`https://api.jisr.net.sa/api`).
-   - If the client's Jisr portal URL has `.jisr.net`, set `JISR_HOST_TYPE=cloud` (`https://apis.jisr.net/api`).
-2. **API Key / Access Token**:
-   - Request an Open API Key from the Jisr account manager or portal: **Settings > Integrations > API Keys / Open API**.
-   - Ensure the API key has permissions for:
-     - `Employees` (Read employee list and emails)
-     - `Attendance` / `Attendance Logs` (Write/push attendance punches)
-
----
-
-## 🚪 What You Need from UniFi Access
-
-1. **Deploying on Railway (Public Webhook)**:
-   - Your Railway service URL will be something like:
-     `https://unifi-jisr-attendance-production.up.railway.app`
-   - The webhook endpoint to register in UniFi is:
-     `https://unifi-jisr-attendance-production.up.railway.app/api/webhooks/unifi`
-2. **Configure Webhook in UniFi Console**:
-   - Go to your UniFi Console -> **Access Application** -> **Settings** -> **General** -> **API / Webhooks**.
-   - Create a new webhook:
-     - **URL**: `https://<YOUR_RAILWAY_DOMAIN>/api/webhooks/unifi`
-     - **Secret / Header**: Set Authorization Header: `Bearer <UNIFI_WEBHOOK_SECRET>`
-     - **Trigger Events**: Select `access.door.unlock` (and Door Unlock logs).
-3. **Reader / Door Naming for In / Out Detection**:
-   - Make sure your readers or doors include descriptive names so the service knows whether someone is entering or leaving:
-     - E.g., `Main Entrance - Entry`, `Turnstile 1 - IN`, `Back Door - Exit`, `Office Door OUT`.
-   - The keywords can be customized using `IN_KEYWORDS` and `OUT_KEYWORDS`.
-
----
-
-## 🧪 Testing & Verification
-
-- **Health Check**:
-  ```bash
-  curl https://<YOUR_RAILWAY_DOMAIN>/health
-  ```
-- **Simulate Test Punch (without UniFi hardware)**:
-  ```bash
-  curl -X POST https://<YOUR_RAILWAY_DOMAIN>/api/admin/test-punch \
-    -H "Content-Type: application/json" \
-    -d '{ "email": "employee@yourcompany.com", "direction": "in", "door": "Main Entrance" }'
-  ```
-- **Force Refresh Jisr Employee Directory**:
-  ```bash
-  curl -X POST https://<YOUR_RAILWAY_DOMAIN>/api/admin/refresh-jisr-cache
-  ```
-
----
-
-## 💻 Local Development
-
-```bash
-# 1. Install dependencies
+```powershell
 npm install
-
-# 2. Copy environment template
-cp .env.example .env
-
-# 3. Start development server with hot-reload
-npm run dev
-
-# 4. Run tests
 npm test
-
-# 5. Build for production
 npm run build
 ```
+
+For frontend development, run `npm run dev:server` and `npm run dev` in separate terminals. Do not send fabricated events to the production webhook.
+
+## Backup
+
+The Railway volume contains the complete operational ledger. Back up `/app/data/attendance.sqlite` together with its WAL files using a volume snapshot or a SQLite online backup. Never deploy without the persistent volume.
