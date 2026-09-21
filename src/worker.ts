@@ -26,7 +26,7 @@ export class Worker {
       this.store.update(event.id, { reason: 'Waiting for employee directory', nextAttemptAt: now + 30_000 }, now); return;
     }
     let employee = this.store.match(event);
-    if (!employee && !event.email && !event.name && event.userId && this.unifi) {
+    if (!employee && !event.email && event.userId && this.unifi) {
       const email = await this.unifi.emailForUser(event.userId);
       if (email) this.store.update(event.id, { email, status: 'queued', reason: 'Email resolved from UniFi user directory', nextAttemptAt: now }, now);
       event = this.store.event(event.id)!;
