@@ -21,7 +21,7 @@ export class UnifiClient implements UnifiDirectory {
     for (const url of urls) {
       const hasQueryParam = url.includes('?');
       for (const headers of headersList) {
-        if (hasQueryParam && headers['X-API-KEY']) continue;
+        if (hasQueryParam && 'X-API-KEY' in headers) continue;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.config.REQUEST_TIMEOUT_MS);
         try {
