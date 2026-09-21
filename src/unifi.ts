@@ -8,15 +8,15 @@ export class UnifiClient implements UnifiDirectory {
     if (this.cache.has(userId)) return this.cache.get(userId) ?? null;
     const base = this.config.UNIFI_BASE_URL.replace(/\/$/, ''), host = base.replace(/:\d+$/, '');
     const urls = [...new Set([
-      `${base}/api/v1/developer/users/${userId}`,
-      `${host}:12455/api/v1/developer/users/${userId}`,
-      `${host}:12445/api/v1/developer/users/${userId}`,
+      `${base}/proxy/access/integration/v1/developer/users/${userId}`,
       `${base}/proxy/access/api/v2/users/${userId}`,
       `${base}/proxy/access/integration/v1/users/${userId}`,
+      `${base}/api/v1/developer/users/${userId}`,
+      `${host}:12455/api/v1/developer/users/${userId}`,
     ])];
     const headersList: HeadersInit[] = [
-      { Authorization: `Bearer ${this.config.UNIFI_API_TOKEN}`, Accept: 'application/json' },
       { 'X-API-KEY': this.config.UNIFI_API_TOKEN, Accept: 'application/json' },
+      { Authorization: `Bearer ${this.config.UNIFI_API_TOKEN}`, Accept: 'application/json' },
     ];
     let lastError = 'no matching email returned';
     for (const url of urls) for (const headers of headersList) {
