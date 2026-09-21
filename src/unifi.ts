@@ -8,7 +8,7 @@ export class UnifiClient implements UnifiDirectory {
     if (this.cache.has(userId)) return this.cache.get(userId) ?? null;
     const base = this.config.UNIFI_BASE_URL.replace(/\/$/, ''), host = base.replace(/:\d+$/, '');
     const urls = [...new Set([
-      `${base}/proxy/access/api/v2/users?api_key=${this.config.UNIFI_API_TOKEN}`,
+      `${base}/proxy/access/api/v2/users`,
       `${base}/proxy/access/integration/v1/developer/users/${userId}`,
       `${base}/proxy/access/integration/v1/users/${userId}`,
       `${base}/api/v1/developer/users/${userId}`,
@@ -18,10 +18,7 @@ export class UnifiClient implements UnifiDirectory {
       { Authorization: `Bearer ${this.config.UNIFI_API_TOKEN}`, Accept: 'application/json' },
     ];
     let lastError = 'no matching email returned';
-    for (const url of urls) {
-      const hasQueryParam = url.includes('?');
-      for (const headers of headersList) {
-        if (hasQueryParam && 'X-API-KEY' in headers) continue;
+    for (const url of urls) for (const headers of headersList) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.config.REQUEST_TIMEOUT_MS);
         try {
@@ -47,7 +44,6 @@ export class UnifiClient implements UnifiDirectory {
         lastError = error instanceof Error ? error.message : String(error);
       }
       finally { clearTimeout(timeout); }
-      }
     }
     console.error(`[UniFi] Email lookup failed for user ${userId}: ${lastError}`);
     return null;
