@@ -8,11 +8,10 @@ export class UnifiClient implements UnifiDirectory {
     if (this.cache.has(userId)) return this.cache.get(userId) ?? null;
     const base = this.config.UNIFI_BASE_URL.replace(/\/$/, ''), host = base.replace(/:\d+$/, '');
     const urls = [...new Set([
+      `${base}/proxy/access/api/v2/users?api_key=${this.config.UNIFI_API_TOKEN}`,
       `${base}/proxy/access/integration/v1/developer/users/${userId}`,
-      `${base}/proxy/access/api/v2/users/${userId}`,
       `${base}/proxy/access/integration/v1/users/${userId}`,
       `${base}/api/v1/developer/users/${userId}`,
-      `${host}:12455/api/v1/developer/users/${userId}`,
     ])];
     const headersList: HeadersInit[] = [
       { 'X-API-KEY': this.config.UNIFI_API_TOKEN, Accept: 'application/json' },
@@ -29,9 +28,18 @@ export class UnifiClient implements UnifiDirectory {
           continue;
         }
         const body = await response.json() as any, data = body?.data ?? body;
-        const email = String(data?.email ?? data?.user_email ?? data?.upn ?? '').trim().toLowerCase();
-        if (email && email.includes('@')) { this.cache.set(userId, email); return email; }
-        lastError = 'response did not contain an email';
+        if (Array.isArray(data)) {
+          const user = data.find((u: any) => u.unique_id === userId || u.id === userId);
+          if (user) {
+            const email = String(user.email ?? user.user_email ?? user.upn ?? '').trim().toLowerCase();
+            if (email && email.includes('@')) { this.cache.set(userId, email); return email; }
+          }
+          lastError = 'user not found in list';
+        } else {
+          const email = String(data?.email ?? data?.user_email ?? data?.upn ?? '').trim().toLowerCase();
+          if (email && email.includes('@')) { this.cache.set(userId, email); return email; }
+          lastError = 'response did not contain an email';
+        }
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
       }
