@@ -1,48 +1,51 @@
-# UniFi → Jisr Attendance
+# UniFi to Jisr Attendance
 
-One Railway service receives UniFi Access events, stores every delivery in SQLite, processes validated physical-access events in order, submits them to Jisr, and serves the React operations dashboard.
+A single-service middleware that turns UniFi Access events into ordered, auditable Jisr HR punches, with a React dashboard for operators.
 
-## Production deployment
+## The problem
 
-Deploy the repository using its Dockerfile. The service listens on port `3000`. Add a Railway persistent volume mounted at `/app/data`; the attendance database is `/app/data/attendance.sqlite`. Run exactly one replica because SQLite and the ordered punch worker are intentionally single-writer.
+Physical-access logs are noisy. They include remote unlocks, alarms, retries, duplicate deliveries and events that arrive out of order. Forwarding every event as a punch produces wrong attendance records. This service keeps every delivery, applies strict rules about which events count as attendance, submits only the ones that qualify, and holds anything ambiguous for a person to resolve.
 
-The existing UniFi webhook can continue using either endpoint:
+## What it does
 
-- `POST /api/webhook/unifi`
-- `POST /api/webhooks/unifi`
+- **Durable intake.** UniFi posts to `POST /api/webhook/unifi` (or `/api/webhooks/unifi`). Every HTTP delivery and every item in a batch is committed to SQLite before processing starts.
+- **Event classification.** FACE, NFC, PIN, wallet NFC and mobile tap are treated as physical credentials and can produce punches. Remote, call, administrative, emergency, failed, malformed, stale, future or ambiguous events are kept but not punched.
+- **Direction rules.** `entered` is IN and `exited` is OUT. A repeated same-direction event is skipped until an opposite-direction event occurs, and identical source events are deduplicated permanently.
+- **Email-based matching with manual resolution.** Employees are matched by email only. An event without an email is held, and an operator can enter the Jisr email on the dashboard. The event is then retried through the normal queue.
+- **Safe submission.** A single ordered worker submits punches to Jisr. A network failure during submission moves the punch into reconciliation rather than resending it. A punch is marked confirmed only after Jisr reports success.
+- **Operations dashboard.** Shows event time in `Asia/Riyadh`, source direction, matching decision, queue state and Jisr confirmation. It includes a pause control, per-event retry, and a session login backed by an HttpOnly cookie.
 
-The webhook secret and all integration values are defined directly in `src/config.ts`, as requested. No environment variables are read.
+## How it's built
 
-Open the service domain to use the dashboard. It shows the event time in `Asia/Riyadh`, the source direction, matching decision, queue state, Jisr submission state, and final confirmation. Held events are never guessed or submitted automatically.
+- **Runtime:** TypeScript on Node with Hono (`@hono/node-server`). One process serves the API, runs the worker and serves the built React dashboard.
+- **Persistence:** SQLite through Node's built-in `node:sqlite` (`DatabaseSync`) in `src/store.ts`. The database lives at `/app/data/attendance.sqlite` in the container.
+- **Frontend:** React 19 and Vite, with `client/` as the dashboard source.
+- **Integration clients:** `src/unifi.ts` and `src/jisr.ts`. Parsing and name normalisation live in `src/normalize.ts`. The attendance rules are in `src/domain.ts`.
+- **Container:** a two-stage Dockerfile on `node:24-alpine`. The build stage compiles everything, and the runtime stage installs production dependencies only.
 
-## Processing rules
+Two decisions shape the design:
 
-- Every HTTP delivery and every item in a UniFi batch is committed before processing.
-- UniFi Unix timestamps are treated as source instants; receipt time is never substituted.
-- `entered` is IN and `exited` is OUT.
-- FACE, NFC, PIN, wallet NFC, and mobile tap are physical attendance credentials.
-- Remote button, call, administrative, emergency, failed, malformed, stale, future, or ambiguous events are retained but not punched.
-- Repeated identical source events are deduplicated permanently.
-- Repeated same-direction events are skipped until an opposite-direction event occurs.
-- Opposite-direction events are preserved even when they occur seconds apart.
-- Employee matching uses the employee email only. Events without an email are held until the operator supplies the Jisr email manually.
-- A network interruption during submission moves the punch to reconciliation. It is never blindly resent.
-- A punch is only marked confirmed after Jisr reports it as successful.
+1. **Single writer by design.** The worker processes punches in order, on a timer set up in `src/index.ts`. Running more than one replica would break that ordering, so the deployment runs one instance.
+2. **Prefer holding to guessing.** Ambiguous events are held and never submitted automatically. The cost is manual work for the operator. The benefit is that no punch is recorded on a guess.
 
-When an event has no employee email, use **Enter employee email** on the held event. The dashboard attaches the selected Jisr email to that event and retries it through the normal protected queue.
+## Running it locally
 
-## Local verification
-
-The test suite uses in-memory SQLite and a fake Jisr gateway. It never contacts the real company integrations.
-
-```powershell
+```bash
 npm install
-npm test
-npm run build
+npm test              # vitest; in-memory SQLite and a fake Jisr gateway
+npm run build         # builds the dashboard, then type-checks with tsc
+npm run dev:server    # API with tsx watch on src/index.ts
+npm run dev           # Vite dev server for the dashboard
+npm run local         # runs src/local.ts
+npm start             # node dist/index.js (after build)
 ```
 
-For frontend development, run `npm run dev:server` and `npm run dev` in separate terminals. Do not send fabricated events to the production webhook.
+The test suite never contacts the real UniFi or Jisr services.
 
-## Backup
+## What I learned / what I'd do next
 
-The Railway volume contains the complete operational ledger. Back up `/app/data/attendance.sqlite` together with its WAL files using a volume snapshot or a SQLite online backup. Never deploy without the persistent volume.
+- Configuration is read from environment variables, with fallback defaults in `src/config.ts`. Those fallbacks currently include credential values, which should be removed from source and rotated.
+- The earlier README said no environment variables were read. That was not accurate, and this version describes the actual behaviour.
+- There is one test file, `src/overhaul.test.ts`, with 14 cases. Adding coverage for the HTTP routes in `src/app.ts` and for the Jisr client would reduce regression risk.
+- The dashboard login uses a single shared password (`DASHBOARD_PASSWORD`). Per-operator accounts would give an audit trail of who held, retried or mapped each event.
+- The Dockerfile has no `USER` directive, so the container runs as root. Adding a non-root user is a small hardening step.
