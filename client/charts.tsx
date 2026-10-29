@@ -82,12 +82,14 @@ export function YearGrid({ lang, days, perPerson }: { lang: Lang; days: { date: 
   return <>
     <Fit minHeight={120}>{W => {
       const left = 46, top = 18, gap = 3;
-      const cell = Math.max(9, Math.min(22, Math.floor((W - left) / weeks) - gap));
+      const cell = Math.max(9, Math.min(28, (W - left) / weeks - gap));
+      // Columns are spread so the last week ends exactly at the right edge, whatever the card width.
+      const step = weeks > 1 ? (W - left - cell) / (weeks - 1) : cell + gap;
       const H = top + 7 * (cell + gap);
       return <svg width={W} height={H} role="img" aria-label={w.yearActivity} className="year">
         {[1, 3, 5].map(r => <text key={r} className="axis" x={left - 8} y={top + r * (cell + gap) + cell - 2} textAnchor="end">{weekdayShort(lang, r)}</text>)}
         {days.map((d, i) => {
-          const col = Math.floor(i / 7), row = i % 7, x = left + col * (cell + gap), y = top + row * (cell + gap);
+          const col = Math.floor(i / 7), row = i % 7, x = left + col * step, y = top + row * (cell + gap);
           return <g key={d.date}>
             {row === 0 && Number(d.date.slice(8)) <= 7 && <text className="axis" x={x} y={11}>{monthShort(lang, d.date)}</text>}
             <rect className={`cell${d.tracked ? '' : ' off'}`} x={x} y={y} width={cell} height={cell} rx={Math.max(2, cell / 4)} fill={d.tracked ? rampColor(d.minutes, max) : 'transparent'}
