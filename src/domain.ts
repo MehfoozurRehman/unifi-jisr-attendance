@@ -31,7 +31,7 @@ export interface EventRow extends NormalizedEvent {
   attempts: number;
   updatedAt: number;
 }
-export interface Employee { id: string; code: string; email: string | null; name: string; active: boolean }
+export interface Employee { id: string; code: string; email: string | null; name: string; active: boolean; department?: string | null; managerEmail?: string | null }
 export interface Punch { id: number; emp_code: string; terminal_sn: string; punch_time: string }
 export interface Submission { outcome: 'accepted' | 'rejected' | 'retry' | 'uncertain'; message: string; response?: unknown }
 export interface Confirmation { outcome: 'confirmed' | 'failed' | 'pending'; message: string; response?: unknown }
