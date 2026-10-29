@@ -9,8 +9,8 @@ import { Attendance } from './attendance.js';
 import { analyze, contributions, members, type Scope } from './analytics.js';
 import { authenticate, clearFailures, ensureStaff, listStaff, loginBlocked, recordFailure } from './staff.js';
 import { directory, ensureDirectory, functionNames, parseEmployeeWorkbook, saveDirectory } from './directory.js';
+import { getRules, saveRules, withRules } from './rules.js';
 
-const rules = (config: Config) => ({ workStartMinutes: config.WORK_START_MINUTES, lateGraceMinutes: config.LATE_GRACE_MINUTES, requiredMinutes: config.REQUIRED_MINUTES, weekendDays: config.WEEKEND_DAYS });
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
 const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
@@ -81,8 +81,14 @@ export function createApp(store: Store, worker: Worker, config: Config, publicDi
   };
   // Scope: ?person=<email or employee id> | ?department=<name> | ?function=<name>; none = whole company.
   const scopeOf = (c: any): Scope => { const v = (k: string) => (c.req.query(k) || '').trim() || undefined; const person = v('person'); return { person: person && person.includes('@') ? person.toLowerCase() : person, department: v('department'), fn: v('function') }; };
-  app.get('/api/admin/analytics', c => { const { from, to } = range(c); return c.json({ ...analyze(store, attendance, config, from, to, scopeOf(c)), rules: rules(config), functionNames: functionNames(store) }); });
-  app.get('/api/admin/contributions', c => { const { to } = range(c); return c.json(contributions(store, attendance, config, to, scopeOf(c))); });
+  // Work rules (start time, grace, required hours, weekend) are edited in the dashboard and apply to every view.
+  const ruled = () => { const r = getRules(store, config); return { rules: r, config: withRules(config, r) }; };
+  app.get('/api/admin/analytics', c => { const { from, to } = range(c); const { rules, config: cfg } = ruled(); return c.json({ ...analyze(store, attendance, cfg, from, to, scopeOf(c)), rules, functionNames: functionNames(store) }); });
+  app.get('/api/admin/contributions', c => { const { to } = range(c); return c.json(contributions(store, attendance, ruled().config, to, scopeOf(c))); });
+  app.get('/api/admin/settings/rules', c => c.json(getRules(store, config)));
+  app.put('/api/admin/settings/rules', async c => {
+    try { return c.json({ ok: true, rules: saveRules(store, await c.req.json()) }); } catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Invalid rules' }, 400); }
+  });
   // Brand files (logo, licensed fonts) live outside the repository in ./brand and are optional.
   app.get('/brand/*', c => { try { const root = resolve(join(process.cwd(), 'brand')); const path = resolve(root, `.${c.req.path.slice('/brand'.length)}`); if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) return c.notFound(); return new Response(readFileSync(path), { headers: { 'Content-Type': path.endsWith('.png') ? 'image/png' : path.endsWith('.svg') ? 'image/svg+xml' : path.endsWith('.ttf') ? 'font/ttf' : path.endsWith('.woff2') ? 'font/woff2' : 'application/octet-stream', 'Cache-Control': 'public, max-age=86400' } }); } catch { return c.notFound(); } });
   app.get('/assets/*', c => { try { const root = resolve(publicDir); const path = resolve(root, `.${c.req.path}`); if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) return c.notFound(); const content = readFileSync(path); return new Response(content, { headers: { 'Content-Type': path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : 'application/octet-stream', 'Cache-Control': 'public, max-age=31536000, immutable' } }); } catch { return c.notFound(); } });

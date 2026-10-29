@@ -23,6 +23,7 @@ const words = {
     importList: 'رفع قائمة الموظفين', importing: 'جارٍ الرفع…', imported: (n: number) => `تم تحديث ${n} موظف`, noDirectory: 'لم تُرفع قائمة الموظفين بعد. ارفع ملف Excel من زر "رفع قائمة الموظفين".',
     unmatched: (n: number) => `${n} بطاقة دخول غير موجودة في قائمة الموظفين`, insideOutside: 'داخل / خارج', rank: 'الترتيب', inDepartment: 'في القسم', perDay: 'يوميًا', minDays: 'من لديهم 3 أيام حضور على الأقل',
     dashboardOf: (n: string) => `لوحة ${n}`, back: 'رجوع', openDepartment: 'فتح القسم',
+    settings: 'الإعدادات', workRules: 'قواعد الدوام', workStart: 'بداية الدوام', grace: 'مهلة التأخير', minutesUnit: 'دقيقة', requiredTime: 'ساعات العمل المطلوبة يوميًا', hoursUnit: 'ساعة', weekendDays: 'أيام العطلة الأسبوعية', save: 'حفظ', saving: 'جارٍ الحفظ…', saved: 'تم حفظ القواعد وتطبيقها على كل اللوحات', rulesHelp: 'تُستخدم هذه القواعد لتحديد الأخضر والأصفر والأحمر في كل الشاشات. يُعد الموظف متأخرًا إذا وصل بعد بداية الدوام مضافًا إليها المهلة.', preview: 'معاينة', lateAfter: (t: string) => `يُعد متأخرًا من وصل بعد ${t}`,
     activityLevels: { none: 'لا أحد', low: 'قليل', mid: 'متوسط', high: 'مزدحم' }, longestInside: 'الأطول داخل المبنى اليوم', nobodyInside: 'لا أحد داخل المبنى الآن', insideToday: 'وقتك داخل المبنى اليوم', attendanceMix: 'توزيع الحضور', weekOverview: 'نظرة على الأسبوع', arrivalWave: 'موجة الوصول', breakWave: 'الخروج للاستراحة', departureWave: 'موجة المغادرة', peopleN: (n: number) => `${n} موظف`, session: 'داخل المبنى', expectedDays: 'من الأيام المتوقعة', upload: 'رفع القائمة',
   },
   en: {
@@ -47,6 +48,7 @@ const words = {
     importList: 'Upload employee list', importing: 'Uploading…', imported: (n: number) => `${n} employees updated`, noDirectory: 'The employee list has not been uploaded yet. Use "Upload employee list" with the HR Excel file.',
     unmatched: (n: number) => `${n} door badges are not in the employee list`, insideOutside: 'Inside / outside', rank: 'Rank', inDepartment: 'in department', perDay: 'per day', minDays: 'People with at least 3 days present',
     dashboardOf: (n: string) => `${n} dashboard`, back: 'Back', openDepartment: 'Open department',
+    settings: 'Settings', workRules: 'Work rules', workStart: 'Work starts at', grace: 'Late grace', minutesUnit: 'minutes', requiredTime: 'Required time per day', hoursUnit: 'hours', weekendDays: 'Weekend days', save: 'Save', saving: 'Saving…', saved: 'Rules saved and applied to every dashboard', rulesHelp: 'These rules decide green, yellow and red on every screen. Someone is late when they arrive after the start time plus the grace.', preview: 'Preview', lateAfter: (t: string) => `Arriving after ${t} counts as late`,
     activityLevels: { none: 'None', low: 'Some', mid: 'Busy', high: 'Peak' }, longestInside: 'Inside the longest today', nobodyInside: 'Nobody is inside right now', insideToday: 'Time inside today', attendanceMix: 'Attendance mix', weekOverview: 'Week overview', arrivalWave: 'Arrival wave', breakWave: 'Break wave', departureWave: 'Departure wave', peopleN: (n: number) => `${n} people`, session: 'Inside', expectedDays: 'of expected days', upload: 'Upload list',
   },
 };

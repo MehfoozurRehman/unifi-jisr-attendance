@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './app.css';
-import { Company, Department, Departments, Employee, Employees, go, initials, presetRange, type Me, type Member, type Preset, type Range } from './screens';
+import { Company, Department, Departments, Employee, Employees, Settings, go, initials, presetRange, type Me, type Member, type Preset, type Range } from './screens';
 import { t, todayLong, type Lang } from './i18n';
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
-type Route = { page: 'company' } | { page: 'departments' } | { page: 'department'; name: string } | { page: 'employees' } | { page: 'employee'; id: string } | { page: 'events' };
+type Route = { page: 'company' } | { page: 'departments' } | { page: 'department'; name: string } | { page: 'employees' } | { page: 'employee'; id: string } | { page: 'events' } | { page: 'settings' };
 const route = (): Route => {
   const h = location.hash.replace(/^#/, ''), tail = (p: string) => decodeURIComponent(h.slice(p.length));
   if (h.startsWith('/employee/')) return { page: 'employee', id: tail('/employee/') };
@@ -14,6 +14,7 @@ const route = (): Route => {
   if (h === '/departments') return { page: 'departments' };
   if (h === '/employees') return { page: 'employees' };
   if (h === '/events') return { page: 'events' };
+  if (h === '/settings') return { page: 'settings' };
   return { page: 'company' };
 };
 
@@ -90,7 +91,7 @@ function App() {
   return <div className="frame"><div className="app">
     <header className="topbar">
       <a className="brand" href="#/" aria-label={w.company}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.replaceWith(Object.assign(document.createElement('b'), { textContent: 'ZOOD' })); }} /><span><small>{todayLong(lang)}</small><b>{w.product}</b></span></a>
-      <nav className="tabs" aria-label={w.product}>{tab('company', ['company'], '#/', w.company)}{tab('departments', ['departments', 'department'], '#/departments', w.departments)}{tab('employees', ['employees', 'employee'], '#/employees', w.employees)}{me.role === 'admin' && tab('events', ['events'], '#/events', w.events)}</nav>
+      <nav className="tabs" aria-label={w.product}>{tab('company', ['company'], '#/', w.company)}{tab('departments', ['departments', 'department'], '#/departments', w.departments)}{tab('employees', ['employees', 'employee'], '#/employees', w.employees)}{me.role === 'admin' && tab('events', ['events'], '#/events', w.events)}{tab('settings', ['settings'], '#/settings', w.settings)}</nav>
       <Search lang={lang} />
       <div className="top-actions">
         <button className="round" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} aria-label={w.language} title={w.language}>{lang === 'ar' ? 'EN' : 'ع'}</button>
@@ -106,6 +107,7 @@ function App() {
     {where.page === 'employees' && <Employees {...screen} me={me} onImport={startImport} />}
     {where.page === 'employee' && <Employee {...screen} id={where.id} />}
     {where.page === 'events' && me.role === 'admin' && <Ledger />}
+    {where.page === 'settings' && <Settings lang={lang} />}
   </div></div>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

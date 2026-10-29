@@ -92,3 +92,21 @@ describe('employee list import', () => {
     s.close();
   });
 });
+
+describe('work rules from the dashboard', () => {
+  it('validates, saves and applies start time, grace, required hours and weekend', async () => {
+    const { getRules, saveRules, validateRules, withRules } = await import('./rules.js');
+    const s = new Store(':memory:');
+    expect(getRules(s, config).workStartMinutes).toBe(config.WORK_START_MINUTES);
+    expect(() => validateRules({ workStartMinutes: 9 * 60, lateGraceMinutes: 999, requiredMinutes: 480, weekendDays: [5, 6] })).toThrow(/Grace/);
+    expect(() => validateRules({ workStartMinutes: 9 * 60, lateGraceMinutes: 10, requiredMinutes: 480, weekendDays: [1, 2, 3, 4] })).toThrow(/three/);
+    saveRules(s, { workStartMinutes: 8 * 60, lateGraceMinutes: 10, requiredMinutes: 9 * 60, weekendDays: [6, 5, 5] });
+    const rules = getRules(s, config);
+    expect(rules).toEqual({ workStartMinutes: 480, lateGraceMinutes: 10, requiredMinutes: 540, weekendDays: [5, 6] });
+    // 08:15 is late with an 08:00 start and 10 minutes grace, but would be on time with the 09:00 default.
+    const taps = [{ at: at('2026-10-28', '08:15'), direction: 'in' as const }, { at: at('2026-10-28', '17:30'), direction: 'out' as const }];
+    expect(summarizeDay('2026-10-28', taps, withRules(config, rules), later).late).toBe(true);
+    expect(summarizeDay('2026-10-28', taps, withRules(config, { ...rules, workStartMinutes: 9 * 60 }), later).late).toBe(false);
+    s.close();
+  });
+});

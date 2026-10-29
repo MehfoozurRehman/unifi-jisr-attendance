@@ -332,3 +332,44 @@ export function Employee({ lang, range, onRange, id }: ScreenProps & { id: strin
     </div>
   </div>;
 }
+
+/* ---------- settings: work rules (HR and admins) ---------- */
+export function Settings({ lang }: { lang: Lang }) {
+  const w = t(lang);
+  const [rules, setRules] = useState<Rules | null>(null); const [status, setStatus] = useState<{ kind: 'idle' | 'saving' | 'ok' | 'error'; text?: string }>({ kind: 'idle' });
+  useEffect(() => { void get<Rules>('/api/admin/settings/rules').then(setRules).catch(() => setStatus({ kind: 'error', text: w.noData })); }, []);
+  if (!rules) return <Loading />;
+  const hhmmToMinutes = (v: string) => { const [h, m] = v.split(':').map(Number); return h * 60 + m; };
+  const update = (patch: Partial<Rules>) => { setRules({ ...rules, ...patch }); setStatus({ kind: 'idle' }); };
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault(); setStatus({ kind: 'saving' });
+    const r = await fetch('/api/admin/settings/rules', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rules) });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) { setRules(body.rules); setStatus({ kind: 'ok', text: w.saved }); } else setStatus({ kind: 'error', text: body.error || 'Error' });
+  };
+  const lateFrom = rules.workStartMinutes + rules.lateGraceMinutes;
+  return <div className="page">
+    <div className="title-row"><div className="title"><h1>{w.settings}</h1><span>{w.workRules}</span></div><span /><span /></div>
+    <div className="grid">
+      <form className="card span-8 settings" onSubmit={save}>
+        <header className="card-head"><h3>{w.workRules}</h3></header>
+        <p className="muted help">{w.rulesHelp}</p>
+        <div className="fields">
+          <label><span>{w.workStart}</span><input type="time" required value={minuteClock(rules.workStartMinutes)} onChange={e => e.target.value && update({ workStartMinutes: hhmmToMinutes(e.target.value) })} /></label>
+          <label><span>{w.grace}</span><div className="unit"><input type="number" min={0} max={240} step={1} required value={rules.lateGraceMinutes} onChange={e => update({ lateGraceMinutes: Number(e.target.value) })} /><em>{w.minutesUnit}</em></div></label>
+          <label><span>{w.requiredTime}</span><div className="unit"><input type="number" min={1} max={16} step={0.25} required value={rules.requiredMinutes / 60} onChange={e => update({ requiredMinutes: Math.round(Number(e.target.value) * 60) })} /><em>{w.hoursUnit}</em></div></label>
+        </div>
+        <fieldset className="weekend"><legend>{w.weekendDays}</legend>
+          <div className="pills wrap">{Array.from({ length: 7 }, (_, d) => { const on = rules.weekendDays.includes(d); return <button type="button" key={d} className={on ? 'on' : ''} aria-pressed={on} onClick={() => update({ weekendDays: on ? rules.weekendDays.filter(x => x !== d) : [...rules.weekendDays, d].sort() })}>{new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : 'en-GB', { weekday: 'long', timeZone: 'UTC' }).format(Date.UTC(2026, 9, 25 + d))}</button>; })}</div>
+        </fieldset>
+        <div className="form-actions"><button className="pill-btn light" disabled={status.kind === 'saving'}>{status.kind === 'saving' ? w.saving : w.save}</button>
+          {status.text && <span className={status.kind === 'error' ? 'error' : 'ok'} role="status">{status.text}</span>}</div>
+      </form>
+      <section className="card span-4 accent-card">
+        <header className="card-head"><h3>{w.preview}</h3></header>
+        <div className="live-hero static"><span><small>{w.lateAfter('')}</small><strong>{minuteClock(lateFrom)}</strong></span></div>
+        <p className="foot">{rulesText(lang, rules)}</p>
+      </section>
+    </div>
+  </div>;
+}

@@ -397,3 +397,21 @@ select option, select optgroup { background-color: var(--card-2); color: var(--t
 /* numbers scale with their tile so durations stay on one line */
 .tile strong { font-size: clamp(26px, 2.3vw, 40px); white-space: nowrap; }
 .tiles.four .tile strong { font-size: clamp(24px, 1.9vw, 36px); }
+
+/* ---------- settings ---------- */
+.settings .help { margin: 0 0 18px; font-size: 13px; line-height: 1.6; }
+.fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-block-end: 18px; }
+.fields label { display: grid; gap: 8px; }
+.fields label > span, .weekend legend { color: var(--text-2); font-size: 12px; }
+.fields input { inline-size: 100%; block-size: 46px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--line-2); background: var(--frame); outline: none; font-size: 16px; color-scheme: dark; }
+.fields input:focus { border-color: var(--sand); }
+.unit { position: relative; }
+.unit em { position: absolute; inset-inline-end: 14px; inset-block-start: 50%; translate: 0 -50%; color: var(--muted); font-style: normal; font-size: 12px; pointer-events: none; }
+.unit input { padding-inline-end: 70px; }
+.weekend { border: 0; padding: 0; margin: 0 0 20px; }
+.weekend legend { margin-block-end: 8px; }
+.form-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-block-start: auto; }
+.form-actions .ok { color: #6fe06f; font-size: 13px; }
+.form-actions .error { font-size: 13px; }
+.live-hero.static { cursor: default; }
+@media (max-width: 860px) { .fields { grid-template-columns: 1fr; } }
