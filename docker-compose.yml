@@ -1,0 +1,13 @@
+services:
+  attendance:
+    build: .
+    container_name: unifi-jisr-attendance
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    # If the container can't reach the UniFi controller on the client's LAN over the
+    # default bridge network (e.g. NAS and UniFi controller are on different VLANs),
+    # comment out `ports:` above and uncomment the line below instead:
+    # network_mode: host
