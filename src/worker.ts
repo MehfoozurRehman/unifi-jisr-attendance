@@ -33,7 +33,7 @@ export class Worker {
       event = this.store.event(event.id)!;
       employee = this.store.match(event);
     }
-    if (!employee) { this.store.update(event.id, { status: 'held', reason: 'No unique active employee match by exact email or full name; exact identity required' }, now); return; }
+    if (!employee) { this.store.update(event.id, { status: 'held', reason: 'No unique active employee match by email; exact identity required' }, now); return; }
     this.store.update(event.id, { employeeId: employee.id, employeeCode: employee.code, employeeName: employee.name }, now);
     const unresolved = this.store.db.prepare("SELECT id FROM events WHERE employeeId=? AND id<>? AND status IN ('sending','submitted','uncertain') LIMIT 1").get(employee.id, event.id);
     if (unresolved) { this.store.update(event.id, { reason: 'Waiting for previous employee punch confirmation', nextAttemptAt: now + 5_000 }, now); return; }
