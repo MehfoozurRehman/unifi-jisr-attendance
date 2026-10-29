@@ -301,3 +301,31 @@ table.people tbody tr:hover, table.people tbody tr:focus-visible { background: r
 .dept footer { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
 .profile-info small a { color: var(--sand); }
 @media (max-width: 760px) { .filters { grid-template-columns: 1fr; } .subbar { border-radius: 18px; } .user span:not(.avatar) { display: none; } }
+
+/* ---------- selects: one dark, branded style everywhere ---------- */
+select {
+  -webkit-appearance: none; appearance: none;
+  block-size: 42px; min-inline-size: 180px; padding-block: 0; padding-inline: 16px 42px;
+  border-radius: 999px; border: 1px solid var(--line-2);
+  background-color: var(--card-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23e0c8b8' d='M7.4 9.3 12 13.9l4.6-4.6L18 10.7l-6 6-6-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-size: 18px; background-position: right 14px center;
+  transition: border-color .15s, background-color .15s;
+}
+[dir='rtl'] select { background-position: left 14px center; }
+select:hover { border-color: rgba(224, 200, 184, .45); background-color: #232b42; }
+select:focus { outline: none; border-color: var(--sand); box-shadow: 0 0 0 3px rgba(224, 200, 184, .18); }
+select:focus-visible { outline: none; }
+select:disabled { opacity: .5; cursor: not-allowed; }
+select option, select optgroup { background-color: var(--card-2); color: var(--text); }
+select option:checked { background-color: var(--sand); color: var(--navy); }
+/* inside filter rows the select keeps the input height and shape */
+.filters select, .ledger-tools select { inline-size: 100%; border-radius: 12px; background-color: var(--bg); }
+.filters select:hover, .ledger-tools select:hover { background-color: #0f1529; }
+@media (forced-colors: active) { select { appearance: auto; background-image: none; padding-inline: 12px; } }
+/* older filter rules use the background shorthand; restore the chevron there */
+.filters select, .ledger-tools select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23e0c8b8' d='M7.4 9.3 12 13.9l4.6-4.6L18 10.7l-6 6-6-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-size: 18px; background-position: right 14px center; padding-inline: 16px 42px;
+}
+[dir='rtl'] .filters select, [dir='rtl'] .ledger-tools select { background-position: left 14px center; }

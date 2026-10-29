@@ -69,6 +69,26 @@ describe('employee list import', () => {
     const result = analyze(s, new Attendance(s, rules), rules, '2026-10-28', '2026-10-28', { department: 'Treasury' }, later);
     expect(result.kpis.people).toBe(2); expect(result.kpis.attendanceRate).toBe(0.5);
     expect(result.departments[0]).toMatchObject({ name: 'Treasury', people: 2 });
+    // Every employee on the list is returned, including those with no taps at all.
+    expect(result.people.map(p => p.member.employeeId).sort()).toEqual(['ZE-001', 'ZE-002']);
+    expect(result.people.find(p => p.member.employeeId === 'ZE-002')).toMatchObject({ present: 0, attendanceRate: 0 });
+  });
+  it('counts people who have not come in today once the start time has passed', async () => {
+    const s = new Store(':memory:');
+    saveDirectory(s, [
+      { employeeId: 'A', jisrId: null, nameAr: null, nameEn: 'In Today', titleAr: null, titleEn: null, function: 'Ops', department: 'Floor', email: 'in@example.com', officeNumber: null, officeType: null, active: true },
+      { employeeId: 'B', jisrId: null, nameAr: null, nameEn: 'Not In', titleAr: null, titleEn: null, function: 'Ops', department: 'Floor', email: 'out@example.com', officeNumber: null, officeType: null, active: true },
+      { employeeId: 'C', jisrId: null, nameAr: null, nameEn: 'Empty Dept', titleAr: null, titleEn: null, function: 'Ops', department: 'Quiet', email: 'quiet@example.com', officeNumber: null, officeType: null, active: true },
+    ], [], Date.now());
+    s.ingest(JSON.stringify({ id: 'access.unlocks.location_unlocked', device: 'r', device_name: 'Door', location_name: 'Door', user: 'u1', user_name: 'In', user_email: 'in@example.com', time: String(at('2026-10-27', '08:50') / 1000), direction: 'entered', credential_type: 'FACE', admin: '', emergency_mode: '' }), at('2026-10-27', '08:51'), config);
+    s.ingest(JSON.stringify({ id: 'access.unlocks.location_unlocked', device: 'r', device_name: 'Door', location_name: 'Door', user: 'u1', user_name: 'In', user_email: 'in@example.com', time: String(at('2026-10-28', '08:50') / 1000), direction: 'entered', credential_type: 'FACE', admin: '', emergency_mode: '' }), at('2026-10-28', '08:51'), config);
+    const noon = at('2026-10-28', '12:00');
+    const result = analyze(s, new Attendance(s, rules), rules, '2026-10-28', '2026-10-28', {}, noon);
+    expect(result.people).toHaveLength(3); expect(result.departments.map(d => d.name).sort()).toEqual(['Floor', 'Quiet']);
+    expect(result.departments.find(d => d.name === 'Floor')!.attendanceRate).toBe(0.5);
+    expect(result.departments.find(d => d.name === 'Quiet')!.attendanceRate).toBe(0);
+    const early = analyze(s, new Attendance(s, rules), rules, '2026-10-28', '2026-10-28', {}, at('2026-10-28', '08:55'));
+    expect(early.departments.find(d => d.name === 'Quiet')!.attendanceRate).toBeNull();
     s.close();
   });
 });

@@ -43,6 +43,7 @@ const histogram = (values: number[], from: number, to: number) => {
 /** Range analytics for the company, one department or function, or one person. Dates are Riyadh calendar days, inclusive. */
 export function analyze(store: Store, attendance: Attendance, config: Config, from: string, to: string, scope: Scope = {}, now = Date.now()) {
   const today = localDate(now, config.TIMEZONE), since = attendance.since();
+  const startPassed = minuteOfDay(now, config) > config.WORK_START_MINUTES + config.LATE_GRACE_MINUTES;
   const dates = datesBetween(from, to);
   const everyone = members(store, attendance);
   const scoped = everyone.filter(m => (!scope.person || m.key === scope.person || m.employeeId === scope.person) && (!scope.department || m.department === scope.department) && (!scope.fn || m.function === scope.fn));
@@ -93,9 +94,11 @@ export function analyze(store: Store, attendance: Attendance, config: Config, fr
     }
     streak = run;
     const worked = summaries.filter(d => d.taps.length), sum = (f: (d: DaySummary) => number) => worked.reduce((s, d) => s + f(d), 0);
-    const expected = summaries.filter(d => d.workday && d.status !== 'untracked' && d.status !== 'future' && !(d.status === 'today' && !d.taps.length)).length;
+    // Today counts as an expected day once the start time plus grace has passed, so people who have not come in lower the rate.
+    const expected = summaries.filter(d => d.workday && d.status !== 'untracked' && d.status !== 'future' && !(d.status === 'today' && !d.taps.length && !startPassed)).length;
     const presentWorkdays = summaries.filter(d => d.workday && d.taps.length).length;
-    const green = summaries.filter(d => d.status === 'green').length, minutes = sum(d => d.minutes);
+    // Today counts as on time once the person has arrived without being late, even before they leave.
+    const green = summaries.filter(d => d.status === 'green' || (d.status === 'today' && d.taps.length > 0 && !d.late)).length, minutes = sum(d => d.minutes);
     const t = summaries.find(d => d.date === today);
     return {
       member, expected, present: worked.length, green, yellow: summaries.filter(d => d.status === 'yellow').length, red: summaries.filter(d => d.status === 'red').length,
