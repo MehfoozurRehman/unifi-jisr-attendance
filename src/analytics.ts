@@ -31,7 +31,12 @@ export interface PersonStats {
   today: { inside: boolean; firstIn: number | null; lastOut: number | null; minutes: number; status: string };
   days?: DaySummary[];
 }
-export interface DailyPoint { date: string; workday: boolean; tracked: boolean; present: number; onTime: number; late: number; absent: number; minutes: number; averageMinutes: number; outsideMinutes: number; breaks: number }
+export interface Wave { median: number | null; count: number }
+export interface DailyPoint {
+  date: string; workday: boolean; tracked: boolean; present: number; onTime: number; late: number; absent: number; minutes: number; averageMinutes: number; outsideMinutes: number; breaks: number;
+  /** When people typically arrived, stepped out for a break, and left that day; `first` are the earliest arrivals. */
+  waves: { arrival: Wave & { first: { name: string; at: number }[] }; breakOut: Wave; departure: Wave };
+}
 
 const ARRIVAL_FROM = 6 * 60, ARRIVAL_TO = 13 * 60, DEPART_FROM = 12 * 60, DEPART_TO = 23 * 60, BUCKET = 30;
 const histogram = (values: number[], from: number, to: number) => {
@@ -62,7 +67,8 @@ export function analyze(store: Store, attendance: Attendance, config: Config, fr
     if (tap.door) doors.set(tap.door, (doors.get(tap.door) ?? 0) + 1);
   }
 
-  const daily = new Map<string, DailyPoint>(dates.map(date => [date, { date, workday: !config.WEEKEND_DAYS.includes(new Date(`${date}T12:00:00Z`).getUTCDay()), tracked: !!since && date >= since && date <= today, present: 0, onTime: 0, late: 0, absent: 0, minutes: 0, averageMinutes: 0, outsideMinutes: 0, breaks: 0 }]));
+  const daily = new Map<string, DailyPoint>(dates.map(date => [date, { date, workday: !config.WEEKEND_DAYS.includes(new Date(`${date}T12:00:00Z`).getUTCDay()), tracked: !!since && date >= since && date <= today, present: 0, onTime: 0, late: 0, absent: 0, minutes: 0, averageMinutes: 0, outsideMinutes: 0, breaks: 0, waves: { arrival: { median: null, count: 0, first: [] }, breakOut: { median: null, count: 0 }, departure: { median: null, count: 0 } } }]));
+  const waveData = new Map(dates.map(date => [date, { arrive: [] as { name: string; at: number; m: number }[], breakOut: [] as number[], depart: [] as number[] }]));
   const occupancy = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
   const weekdayCount = Array.from({ length: 7 }, () => 0);
   for (const date of dates) if (daily.get(date)!.tracked) weekdayCount[new Date(`${date}T12:00:00Z`).getUTCDay()]++;
@@ -81,6 +87,10 @@ export function analyze(store: Store, attendance: Attendance, config: Config, fr
         if (day.status === 'yellow') point.late++;
         if (day.firstIn !== null && !day.missingIn && day.date !== since) { const m = minuteOfDay(day.firstIn, config); arrivals.push(m); personArrivals.push(m); }
         if (day.lastOut !== null && day.date !== today) { const m = minuteOfDay(day.lastOut, config); departures.push(m); personDepartures.push(m); }
+        const wave = waveData.get(day.date)!;
+        if (day.firstIn !== null && !day.missingIn) wave.arrive.push({ name: member.name, at: day.firstIn, m: minuteOfDay(day.firstIn, config) });
+        if (day.lastOut !== null && !day.inside) wave.depart.push(minuteOfDay(day.lastOut, config));
+        { let closed: number | null = null, inside = false; for (const tap of day.taps) { if (tap.direction === 'in') { if (closed !== null) wave.breakOut.push(minuteOfDay(closed, config)); closed = null; inside = true; } else if (inside) { closed = tap.at; inside = false; } } }
         const seen = new Set<number>(); let open: number | null = null;
         for (const tap of day.taps) {
           if (tap.direction === 'in') { if (open === null) open = tap.at; continue; }
@@ -111,7 +121,15 @@ export function analyze(store: Store, attendance: Attendance, config: Config, fr
     };
   });
 
-  for (const point of daily.values()) point.averageMinutes = avg(point.minutes, point.present);
+  for (const point of daily.values()) {
+    point.averageMinutes = avg(point.minutes, point.present);
+    const wave = waveData.get(point.date)!;
+    point.waves = {
+      arrival: { median: median(wave.arrive.map(a => a.m)), count: wave.arrive.length, first: [...wave.arrive].sort((a, b) => a.at - b.at).slice(0, 4).map(a => ({ name: a.name, at: a.at })) },
+      breakOut: { median: median(wave.breakOut), count: wave.breakOut.length },
+      departure: { median: median(wave.depart), count: wave.depart.length },
+    };
+  }
   const series = [...daily.values()];
   const totalPresent = series.reduce((s, p) => s + p.present, 0), totalMinutes = series.reduce((s, p) => s + p.minutes, 0);
   const expected = stats.reduce((s, p) => s + p.expected, 0), presentWork = stats.reduce((s, p) => s + Math.round((p.attendanceRate ?? 0) * p.expected), 0);

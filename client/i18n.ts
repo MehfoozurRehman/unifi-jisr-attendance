@@ -23,6 +23,7 @@ const words = {
     importList: 'رفع قائمة الموظفين', importing: 'جارٍ الرفع…', imported: (n: number) => `تم تحديث ${n} موظف`, noDirectory: 'لم تُرفع قائمة الموظفين بعد. ارفع ملف Excel من زر "رفع قائمة الموظفين".',
     unmatched: (n: number) => `${n} بطاقة دخول غير موجودة في قائمة الموظفين`, insideOutside: 'داخل / خارج', rank: 'الترتيب', inDepartment: 'في القسم', perDay: 'يوميًا', minDays: 'من لديهم 3 أيام حضور على الأقل',
     dashboardOf: (n: string) => `لوحة ${n}`, back: 'رجوع', openDepartment: 'فتح القسم',
+    activityLevels: { none: 'لا أحد', low: 'قليل', mid: 'متوسط', high: 'مزدحم' }, longestInside: 'الأطول داخل المبنى اليوم', nobodyInside: 'لا أحد داخل المبنى الآن', insideToday: 'وقتك داخل المبنى اليوم', attendanceMix: 'توزيع الحضور', weekOverview: 'نظرة على الأسبوع', arrivalWave: 'موجة الوصول', breakWave: 'الخروج للاستراحة', departureWave: 'موجة المغادرة', peopleN: (n: number) => `${n} موظف`, session: 'داخل المبنى', expectedDays: 'من الأيام المتوقعة', upload: 'رفع القائمة',
   },
   en: {
     product: 'Attendance', company: 'Company', departments: 'Departments', employees: 'Employees', events: 'Event ledger', signOut: 'Sign out', language: 'العربية',
@@ -46,6 +47,7 @@ const words = {
     importList: 'Upload employee list', importing: 'Uploading…', imported: (n: number) => `${n} employees updated`, noDirectory: 'The employee list has not been uploaded yet. Use "Upload employee list" with the HR Excel file.',
     unmatched: (n: number) => `${n} door badges are not in the employee list`, insideOutside: 'Inside / outside', rank: 'Rank', inDepartment: 'in department', perDay: 'per day', minDays: 'People with at least 3 days present',
     dashboardOf: (n: string) => `${n} dashboard`, back: 'Back', openDepartment: 'Open department',
+    activityLevels: { none: 'None', low: 'Some', mid: 'Busy', high: 'Peak' }, longestInside: 'Inside the longest today', nobodyInside: 'Nobody is inside right now', insideToday: 'Time inside today', attendanceMix: 'Attendance mix', weekOverview: 'Week overview', arrivalWave: 'Arrival wave', breakWave: 'Break wave', departureWave: 'Departure wave', peopleN: (n: number) => `${n} people`, session: 'Inside', expectedDays: 'of expected days', upload: 'Upload list',
   },
 };
 export type Words = typeof words.en;

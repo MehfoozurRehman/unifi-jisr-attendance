@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrivalDots, DailyAttendance, DailyHours, DayTimeline, DoorList, RankBars, Ring, STATUS, OUTSIDE, TimeHistogram, WeekHours, YearGrid, type DailyPoint, type Day, type RankItem } from './charts';
+import { ArrivalDots, DailyAttendance, DailyHours, DayTimeline, DoorList, LiveTimer, RankBars, Rings, STATUS, OUTSIDE, TimeHistogram, WeekBoard, WorkActivity, YearGrid, type BoardCard, type DailyPoint, type Day, type LiveRow, type RankItem } from './charts';
 import { clock, duration, longDate, minuteClock, percent, shortDate, t, type Lang } from './i18n';
 
 /* ---------- types from the API ---------- */
@@ -18,25 +18,26 @@ type Grid = { days: { date: string; minutes: number; present: number; tracked: b
 export type Me = { username: string; displayName: string; role: 'admin' | 'hr'; bootstrap: boolean };
 
 /* ---------- range ---------- */
-export type Preset = '7' | '30' | '90' | 'month' | 'year' | 'custom';
+export type Preset = 'today' | '7' | '30' | '90' | 'month' | 'year' | 'custom';
 export type Range = { preset: Preset; from: string; to: string };
 const riyadhToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
-const minus = (date: string, days: number) => new Date(Date.parse(`${date}T12:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+const shift = (date: string, days: number) => new Date(Date.parse(`${date}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 export const presetRange = (preset: Preset, custom?: { from: string; to: string }): Range => {
   const today = riyadhToday();
   if (preset === 'custom' && custom) return { preset, ...custom };
+  if (preset === 'today') return { preset, from: today, to: today };
   if (preset === 'month') return { preset, from: `${today.slice(0, 8)}01`, to: today };
   if (preset === 'year') return { preset, from: `${today.slice(0, 4)}-01-01`, to: today };
-  return { preset, from: minus(today, Number(preset === 'custom' ? '30' : preset) - 1), to: today };
+  return { preset, from: shift(today, -(Number(preset === 'custom' ? '30' : preset) - 1)), to: today };
 };
 export function RangePicker({ lang, range, onChange }: { lang: Lang; range: Range; onChange: (r: Range) => void }) {
   const w = t(lang); const [open, setOpen] = useState(false); const [from, setFrom] = useState(range.from); const [to, setTo] = useState(range.to);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); }; document.addEventListener('mousedown', close); return () => document.removeEventListener('mousedown', close); }, []);
-  const labels: Record<Exclude<Preset, 'custom'>, string> = { '7': w.last7, '30': w.last30, '90': w.last90, month: w.thisMonth, year: w.thisYear };
+  const labels: Record<Exclude<Preset, 'custom'>, string> = { today: w.today, '7': w.last7, '30': w.last30, '90': w.last90, month: w.thisMonth, year: w.thisYear };
   const current = range.preset === 'custom' ? `${shortDate(lang, range.from)} – ${shortDate(lang, range.to)}` : labels[range.preset];
   return <div className="range" ref={box}>
-    <button className="range-btn" onClick={() => setOpen(!open)} aria-expanded={open}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2Zm-2 8h14v10H5Z" /></svg>{current}</button>
+    <button className="pill-btn" onClick={() => setOpen(!open)} aria-expanded={open}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2Zm-2 8h14v10H5Z" /></svg>{current}</button>
     {open && <div className="range-menu" role="listbox">
       {(Object.keys(labels) as Exclude<Preset, 'custom'>[]).map(p => <button key={p} role="option" aria-selected={range.preset === p} className={range.preset === p ? 'on' : ''} onClick={() => { onChange(presetRange(p)); setOpen(false); }}>{labels[p]}{range.preset === p && <b>✓</b>}</button>)}
       <div className="range-custom"><span>{w.custom}</span><label>{w.from}<input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} /></label><label>{w.to}<input type="date" value={to} min={from} onChange={e => setTo(e.target.value)} /></label><button className="apply" onClick={() => { if (from && to) { onChange(presetRange('custom', { from, to })); setOpen(false); } }}>{w.apply}</button></div>
@@ -47,9 +48,9 @@ export function RangePicker({ lang, range, onChange }: { lang: Lang; range: Rang
 /* ---------- helpers ---------- */
 const get = async <T,>(url: string): Promise<T> => { const r = await fetch(url); if (!r.ok) throw new Error(String(r.status)); return r.json(); };
 function useData<T>(url: string | null) {
-  const [data, setData] = useState<T | null>(null); const [loading, setLoading] = useState(false);
-  useEffect(() => { if (!url) return; let live = true; const load = () => { setLoading(true); get<T>(url).then(d => { if (live) setData(d); }).catch(() => {}).finally(() => { if (live) setLoading(false); }); }; load(); const timer = setInterval(load, 60_000); return () => { live = false; clearInterval(timer); }; }, [url]);
-  return { data, loading };
+  const [state, setState] = useState<{ data: T | null; at: number }>({ data: null, at: 0 }); const [loading, setLoading] = useState(false);
+  useEffect(() => { if (!url) return; let live = true; const load = () => { setLoading(true); get<T>(url).then(d => { if (live) setState({ data: d, at: Date.now() }); }).catch(() => {}).finally(() => { if (live) setLoading(false); }); }; load(); const timer = setInterval(load, 60_000); return () => { live = false; clearInterval(timer); }; }, [url]);
+  return { data: state.data, fetchedAt: state.at, loading };
 }
 export const initials = (name: string | null) => (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 export const go = (hash: string) => { location.hash = hash; };
@@ -58,26 +59,29 @@ const deptHash = (name: string) => `#/department/${encodeURIComponent(name)}`;
 const nameOf = (lang: Lang, m: Member) => (lang === 'ar' && m.nameAr) || m.name;
 const titleOf = (lang: Lang, m: Member) => (lang === 'ar' && m.titleAr) || m.titleEn || '';
 const fnName = (lang: Lang, names: Record<string, string> | undefined, fn: string | null) => !fn ? '' : (lang === 'ar' && names?.[fn]) || fn;
-const qs = (range: Range, extra: Record<string, string> = {}) => new URLSearchParams({ from: range.from, to: range.to, ...extra }).toString();
+const qs = (range: { from: string; to: string }, extra: Record<string, string> = {}) => new URLSearchParams({ from: range.from, to: range.to, ...extra }).toString();
+const weekOf = (date: string) => { const start = shift(date, -new Date(`${date}T12:00:00Z`).getUTCDay()); return { from: start, to: shift(start, 6) }; };
 const Card = ({ title, extra, className = '', children }: { title?: string; extra?: React.ReactNode; className?: string; children: React.ReactNode }) =>
   <section className={`card ${className}`}>{(title || extra) && <header className="card-head"><h3>{title}</h3>{extra}</header>}{children}</section>;
-const Kpi = ({ value, label, tone, hint }: { value: string; label: string; tone?: 'good' | 'warning' | 'critical' | 'outside'; hint?: string }) =>
-  <section className="card kpi"><strong>{value}</strong><span>{tone && <i style={{ background: tone === 'outside' ? OUTSIDE : STATUS[tone] }} />}{label}</span>{hint && <small>{hint}</small>}</section>;
+const Tile = ({ value, label, tone, hint, wide }: { value: string; label: string; tone?: 'good' | 'warning' | 'critical' | 'outside'; hint?: string; wide?: boolean }) =>
+  <section className={`card tile${wide ? ' wide' : ''}`}><strong>{value}</strong><span>{tone && <i style={{ background: tone === 'outside' ? OUTSIDE : STATUS[tone] }} />}{label}</span>{hint && <small>{hint}</small>}</section>;
 const rulesText = (lang: Lang, r?: Rules) => r ? t(lang).rules(minuteClock(r.workStartMinutes), r.lateGraceMinutes, duration(lang, r.requiredMinutes)) : '';
-const Loading = () => <div className="loading" aria-busy="true">…</div>;
+const Loading = () => <div className="loading" aria-busy="true"><span /></div>;
 function Pills<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   return <div className="pills" role="tablist">{options.map(([v, l]) => <button key={v} role="tab" aria-selected={value === v} className={value === v ? 'on' : ''} onClick={() => onChange(v)}>{l}</button>)}</div>;
 }
 
-export function PeopleStrip({ lang, title, sub, people, active }: { lang: Lang; title: string; sub: string; people: Stats[]; active?: string }) {
+/* ---------- title row (concept: "Capture IT · Developers" + faces + action) ---------- */
+export function TitleRow({ lang, title, sub, people, active, actions }: { lang: Lang; title: string; sub: string; people: Stats[]; active?: string; actions?: React.ReactNode }) {
   const row = useRef<HTMLDivElement>(null);
-  const sorted = useMemo(() => [...people].sort((a, b) => Number(b.today.inside) - Number(a.today.inside)), [people]);
-  const scroll = (d: number) => row.current?.scrollBy({ left: d * (lang === 'ar' ? -1 : 1) * 320, behavior: 'smooth' });
-  return <div className="strip-wrap">
-    <div className="team-title"><h2>{title}</h2><span>{sub}</span></div>
-    <div className="people-strip"><button className="nav" aria-label="‹" onClick={() => scroll(-1)}>‹</button>
-      <div className="strip-row" ref={row}>{sorted.map(p => <button key={p.member.key} className={`face${active === p.member.key ? ' active' : ''}`} title={nameOf(lang, p.member)} onClick={() => go(personHash(p.member))}><span className="avatar">{initials(p.member.name)}</span>{p.today.inside && <i className="live-dot" />}</button>)}</div>
-      <button className="nav" aria-label="›" onClick={() => scroll(1)}>›</button></div>
+  const sorted = useMemo(() => [...people].sort((a, b) => Number(b.today.inside) - Number(a.today.inside) || (b.today.minutes - a.today.minutes)), [people]);
+  const scroll = (d: number) => row.current?.scrollBy({ left: d * (lang === 'ar' ? -1 : 1) * 300, behavior: 'smooth' });
+  return <div className="title-row">
+    <div className="title"><h1>{title}</h1><span>{sub}</span></div>
+    <div className="faces"><button className="round" aria-label="‹" onClick={() => scroll(-1)}>‹</button>
+      <div className="faces-row" ref={row}>{sorted.map(p => <button key={p.member.key} className={`face${active === p.member.key ? ' active' : ''}`} title={nameOf(lang, p.member)} onClick={() => go(personHash(p.member))}><span className="avatar">{initials(p.member.name)}</span>{p.today.inside && <i className="live-dot" />}</button>)}</div>
+      <button className="round" aria-label="›" onClick={() => scroll(1)}>›</button></div>
+    <div className="title-actions">{actions}</div>
   </div>;
 }
 
@@ -142,99 +146,128 @@ export function MembersTable({ lang, people }: { lang: Lang; people: Stats[] }) 
     </tr>)}</tbody></table>{!rows.length && <p className="muted">{w.noData}</p>}</div>;
 }
 
-/* ---------- overview used by company and department ---------- */
-function Overview({ lang, data, grid, title, sub, companyLevel }: { lang: Lang; data: Analytics; grid: Grid | null; title: string; sub: string; companyLevel: boolean }) {
-  const w = t(lang), k = data.kpis;
-  return <>
-    <PeopleStrip lang={lang} title={title} sub={sub} people={data.people} />
-    <div className="grid">
-      <section className="card hero span-4">
-        <div><span className="eyebrow">{w.insideNow}</span><strong className="big">{k.insideNow}<small> {w.of} {k.people}</small></strong><p>{k.leftToday} {w.left} · {data.range.since ? w.recordingSince(longDate(lang, data.range.since)) : ''}</p></div>
-        <Ring value={k.insideNow} total={k.people} />
-      </section>
-      <div className="kpis span-8">
-        <Kpi value={percent(k.attendanceRate)} label={w.attendanceRate} />
-        <Kpi value={percent(k.onTimeRate)} label={w.onTimeRate} tone="good" />
-        <Kpi value={duration(lang, k.averageMinutes)} label={w.averageDay} hint={`${w.medianArrival} ${minuteClock(k.medianArrival)}`} />
-        <Kpi value={duration(lang, k.averageOutside)} label={w.averageOutside} tone="outside" hint={`${k.averageBreaks} ${w.breaks} ${w.perDay}`} />
-        <Kpi value={String(k.lateDays)} label={w.lateDays} tone="warning" />
-        <Kpi value={String(k.absentDays)} label={w.absentDays} tone="critical" />
-      </div>
-      <Card title={w.dailyAttendance} className="span-8"><DailyAttendance lang={lang} data={data.daily} /></Card>
-      <Card title={w.leaders} className="span-4"><Leaderboard lang={lang} people={data.people} /></Card>
-      {companyLevel
-        ? <Card title={w.byDepartment} className="span-8"><GroupCompare lang={lang} groups={data.departments} names={data.functionNames} link={g => deptHash(g.name)} /></Card>
-        : <Card title={w.people} className="span-8"><MembersTable lang={lang} people={data.people} /></Card>}
-      <Card title={w.weeklyActivity} className="span-4"><WeekHours lang={lang} matrix={data.weekHours} fromHour={7} toHour={20} /></Card>
-      <Card title={w.yearActivity} className="span-12">{grid ? <YearGrid lang={lang} days={grid.days} /> : <Loading />}</Card>
-      <Card title={w.arrivals} extra={<span className="pill">{w.medianArrival} {minuteClock(k.medianArrival)}</span>} className="span-4"><TimeHistogram lang={lang} bins={data.arrivals} title={w.arrivals} marker={data.rules.workStartMinutes + data.rules.lateGraceMinutes} /></Card>
-      <Card title={w.departures} extra={<span className="pill">{w.medianDeparture} {minuteClock(k.medianDeparture)}</span>} className="span-4"><TimeHistogram lang={lang} bins={data.departures} title={w.departures} /></Card>
-      {companyLevel
-        ? <Card title={w.byFunction} className="span-4"><GroupCompare lang={lang} groups={data.functions} names={data.functionNames} /></Card>
-        : <Card title={w.doors} className="span-4"><DoorList lang={lang} doors={data.doors} /></Card>}
-    </div>
-    <p className="foot">{rulesText(lang, data.rules)}</p>
-  </>;
-}
+/* ---------- week board cards ---------- */
+const waveCards = (lang: Lang, week: Analytics | null): BoardCard[] => {
+  if (!week) return [];
+  const w = t(lang), cards: BoardCard[] = [];
+  week.daily.forEach((d, day) => {
+    const a = d.waves.arrival, b = d.waves.breakOut, dep = d.waves.departure;
+    if (a.count && a.median !== null) cards.push({ day, start: a.median - 25, end: a.median + 35, title: w.arrivalWave, sub: `${minuteClock(a.median)} · ${w.peopleN(a.count)}`, tone: 'sand', avatars: a.first.map(f => f.name) });
+    if (b.count && b.median !== null) cards.push({ day, start: b.median - 15, end: b.median + 40, title: w.breakWave, sub: `${minuteClock(b.median)} · ${w.peopleN(b.count)}`, tone: 'outside' });
+    if (dep.count && dep.median !== null) cards.push({ day, start: dep.median - 30, end: dep.median + 30, title: w.departureWave, sub: `${minuteClock(dep.median)} · ${w.peopleN(dep.count)}`, tone: 'dark' });
+  });
+  return cards;
+};
+const sessionCards = (lang: Lang, days: Day[], week: { from: string; to: string }): BoardCard[] => {
+  const w = t(lang), cards: BoardCard[] = [];
+  const mod = (at: number) => { const [h, m] = clock('en', at).split(':').map(Number); return h * 60 + m; };
+  days.filter(d => d.date >= week.from && d.date <= week.to).forEach(d => {
+    const day = new Date(`${d.date}T12:00:00Z`).getUTCDay(); let open: number | null = null;
+    const push = (a: number, b: number) => cards.push({ day, start: mod(a), end: mod(b), title: w.session, sub: `${clock(lang, a)} – ${clock(lang, b)}`, tone: d.status === 'yellow' ? 'dark' : 'sand' });
+    for (const tap of d.taps) { if (tap.direction === 'in') { if (open === null) open = tap.at; } else if (open !== null) { push(open, tap.at); open = null; } }
+    if (open !== null && d.inside) push(open, Date.now());
+  });
+  return cards;
+};
 
-/* ---------- screens ---------- */
-export function Company({ lang, range, me, onImport }: { lang: Lang; range: Range; me: Me; onImport: () => void }) {
-  const w = t(lang);
-  const { data, loading } = useData<Analytics>(`/api/admin/analytics?${qs(range)}`);
-  const { data: grid } = useData<Grid>(`/api/admin/contributions?${qs(range)}`);
-  if (!data) return <Loading />;
-  const noList = data.people.every(p => !p.member.inDirectory);
-  return <div className={`page${loading ? ' refreshing' : ''}`}>
-    {noList && <div className="notice">{w.noDirectory}{me.role === 'admin' && <button className="btn primary" onClick={onImport}>{w.importList}</button>}</div>}
-    {!noList && data.unmatched.length > 0 && <div className="notice subtle">{w.unmatched(data.unmatched.length)}{me.role === 'admin' && <span className="muted"> · {data.unmatched.slice(0, 4).map(u => u.name || u.key).join('، ')}</span>}</div>}
-    <Overview lang={lang} data={data} grid={grid} title={w.companyName} sub={w.members(data.kpis.people)} companyLevel />
+/* ---------- overview used by company and department ---------- */
+function Overview({ lang, data, fetchedAt, grid, week, companyLevel }: { lang: Lang; data: Analytics; fetchedAt: number; grid: Grid | null; week: Analytics | null; companyLevel: boolean }) {
+  const w = t(lang), k = data.kpis;
+  const expected = data.people.reduce((s, p) => s + p.expected, 0) || 1;
+  const sum = (f: (p: Stats) => number) => data.people.reduce((s, p) => s + f(p), 0);
+  const live: LiveRow[] = [...data.people].filter(p => p.today.firstIn !== null).sort((a, b) => Number(b.today.inside) - Number(a.today.inside) || b.today.minutes - a.today.minutes)
+    .map(p => ({ key: p.member.key, name: nameOf(lang, p.member), sub: p.member.department ?? '', minutesAtFetch: p.today.minutes, inside: p.today.inside, onClick: () => go(personHash(p.member)) }));
+  const weekRange = weekOf(data.range.to);
+  const weekDays = Array.from({ length: 7 }, (_, i) => shift(weekRange.from, i));
+  return <div className="grid">
+    <section className="card span-3 accent-card"><LiveTimer lang={lang} title={w.longestInside} rows={live} fetchedAt={fetchedAt} emptyLabel={w.nobodyInside} /></section>
+    <Card title={w.attendanceMix} className="span-3"><Rings center={percent(k.attendanceRate)} centerLabel={w.attendanceRate} parts={[{ label: w.onTime, value: sum(p => p.green) / expected, color: STATUS.good }, { label: w.late, value: sum(p => p.yellow) / expected, color: STATUS.warning }, { label: w.absent, value: sum(p => p.red) / expected, color: STATUS.critical }]} /></Card>
+    <div className="tiles span-3">
+      <Tile value={`${k.insideNow}`} label={`${w.insideNow} · ${w.of} ${k.people}`} tone="good" />
+      <Tile value={percent(k.onTimeRate)} label={w.onTimeRate} />
+      <Tile wide value={duration(lang, k.averageMinutes)} label={w.averageDay} hint={`${w.averageOutside} ${duration(lang, k.averageOutside)} · ${k.averageBreaks} ${w.breaks} ${w.perDay}`} />
+    </div>
+    <div className="stack span-3 row-2">
+      <Card title={w.weeklyActivity} extra={<span className="pill">{w.medianArrival} {minuteClock(k.medianArrival)}</span>} className="grow"><WorkActivity lang={lang} matrix={data.weekHours} /></Card>
+      <Card title={w.doors} extra={<span className="pill">{data.doors.length}</span>}><DoorList lang={lang} doors={data.doors.slice(0, 5)} /></Card>
+    </div>
+    <Card title={w.weekOverview} extra={<span className="pill">{shortDate(lang, weekRange.from)} – {shortDate(lang, weekRange.to)}</span>} className="span-9"><WeekBoard lang={lang} days={weekDays} today={data.range.today} cards={waveCards(lang, week)} /></Card>
+    <Card title={w.dailyAttendance} className="span-8 chart-card"><DailyAttendance lang={lang} data={data.daily} /></Card>
+    <Card title={w.leaders} className="span-4"><Leaderboard lang={lang} people={data.people} /></Card>
+    <Card title={w.yearActivity} className="span-12"><>{grid ? <YearGrid lang={lang} days={grid.days} /> : <Loading />}</></Card>
+    {companyLevel
+      ? <Card title={w.byDepartment} className="span-6"><GroupCompare lang={lang} groups={data.departments} names={data.functionNames} link={g => deptHash(g.name)} /></Card>
+      : <Card title={w.people} className="span-6"><MembersTable lang={lang} people={data.people} /></Card>}
+    <Card title={w.arrivals} className="span-3 chart-card"><TimeHistogram lang={lang} bins={data.arrivals} title={w.arrivals} marker={data.rules.workStartMinutes + data.rules.lateGraceMinutes} /></Card>
+    <Card title={w.departures} extra={<span className="pill">{minuteClock(k.medianDeparture)}</span>} className="span-3 chart-card"><TimeHistogram lang={lang} bins={data.departures} title={w.departures} /></Card>
+    <p className="foot span-12">{rulesText(lang, data.rules)}</p>
   </div>;
 }
 
-export function Departments({ lang, range }: { lang: Lang; range: Range }) {
+/* ---------- screens ---------- */
+type ScreenProps = { lang: Lang; range: Range; onRange: (r: Range) => void };
+export function Company({ lang, range, onRange, me, onImport }: ScreenProps & { me: Me; onImport: () => void }) {
+  const w = t(lang);
+  const { data, fetchedAt, loading } = useData<Analytics>(`/api/admin/analytics?${qs(range)}`);
+  const { data: grid } = useData<Grid>(`/api/admin/contributions?${qs(range)}`);
+  const { data: week } = useData<Analytics>(`/api/admin/analytics?${qs(weekOf(range.to))}`);
+  if (!data) return <Loading />;
+  const noList = data.people.every(p => !p.member.inDirectory);
+  return <div className={`page${loading ? ' refreshing' : ''}`}>
+    <TitleRow lang={lang} title={`${w.companyName} · ${w.company}`} sub={w.members(data.kpis.people)} people={data.people}
+      actions={<><RangePicker lang={lang} range={range} onChange={onRange} />{me.role === 'admin' && <button className="pill-btn light" onClick={onImport}><span aria-hidden="true">＋</span>{w.upload}</button>}</>} />
+    {noList && <div className="notice">{w.noDirectory}</div>}
+    {!noList && data.unmatched.length > 0 && <div className="notice subtle">{w.unmatched(data.unmatched.length)}{me.role === 'admin' && <span className="muted"> · {data.unmatched.slice(0, 4).map(u => u.name || u.key).join('، ')}</span>}</div>}
+    <Overview lang={lang} data={data} fetchedAt={fetchedAt} grid={grid} week={week} companyLevel />
+  </div>;
+}
+
+export function Departments({ lang, range, onRange }: ScreenProps) {
   const w = t(lang); const [fn, setFn] = useState('');
   const { data, loading } = useData<Analytics>(`/api/admin/analytics?${qs(range)}`);
   if (!data) return <Loading />;
   const functions = [...new Set(data.departments.map(d => d.function).filter(Boolean))] as string[];
   const shown = data.departments.filter(d => d.name !== '—' && (!fn || d.function === fn));
   return <div className={`page${loading ? ' refreshing' : ''}`}>
-    <div className="page-head"><div className="team-title"><h2>{w.departments}</h2><span>{shown.length}</span></div>
-      <div className="pills wrap"><button className={!fn ? 'on' : ''} onClick={() => setFn('')}>{w.allFunctions}</button>{functions.map(f => <button key={f} className={fn === f ? 'on' : ''} onClick={() => setFn(f)}>{fnName(lang, data.functionNames, f)}</button>)}</div></div>
+    <TitleRow lang={lang} title={`${w.companyName} · ${w.departments}`} sub={`${shown.length} ${w.departments}`} people={data.people} actions={<RangePicker lang={lang} range={range} onChange={onRange} />} />
+    <div className="pills wrap filter-row"><button className={!fn ? 'on' : ''} onClick={() => setFn('')}>{w.allFunctions}</button>{functions.map(f => <button key={f} className={fn === f ? 'on' : ''} onClick={() => setFn(f)}>{fnName(lang, data.functionNames, f)}</button>)}</div>
     <div className="dept-grid">{shown.map(d => <button key={d.name} className="card dept" onClick={() => go(deptHash(d.name))}>
-      <header><span><b>{d.name}</b><small>{fnName(lang, data.functionNames, d.function)}</small></span><span className="live">{d.insideNow}/{d.people}</span></header>
+      <header><span><b>{d.name}</b><small>{fnName(lang, data.functionNames, d.function)}</small></span><span className="live-chip"><i />{d.insideNow}/{d.people}</span></header>
+      <div className="dept-main"><strong>{percent(d.attendanceRate)}</strong><small>{w.attendanceRate}</small></div>
+      <div className="meter" aria-hidden="true"><i style={{ inlineSize: `${(d.attendanceRate ?? 0) * 100}%`, background: 'var(--sand)' }} /></div>
       <div className="dept-stats">
-        <span><strong>{percent(d.attendanceRate)}</strong><small>{w.attendanceRate}</small></span>
-        <span><strong>{percent(d.onTimeRate)}</strong><small>{w.onTimeRate}</small></span>
-        <span><strong>{duration(lang, d.averageMinutes)}</strong><small>{w.averageDay}</small></span>
+        <span><b>{percent(d.onTimeRate)}</b><small>{w.onTimeRate}</small></span>
+        <span><b>{duration(lang, d.averageMinutes)}</b><small>{w.averageDay}</small></span>
+        <span><b>{minuteClock(d.medianArrival)}</b><small>{w.medianArrival}</small></span>
       </div>
-      <div className="meter" aria-hidden="true"><i style={{ inlineSize: `${(d.onTimeRate ?? 0) * 100}%`, background: STATUS.good }} /></div>
-      <footer><span>{w.medianArrival} {minuteClock(d.medianArrival)}</span><span>{w.averageOutside} {duration(lang, d.averageOutside)}</span></footer>
     </button>)}</div>
     {!shown.length && <p className="card muted">{w.noData}</p>}
   </div>;
 }
 
-export function Department({ lang, range, name }: { lang: Lang; range: Range; name: string }) {
+export function Department({ lang, range, onRange, name }: ScreenProps & { name: string }) {
   const w = t(lang);
-  const { data, loading } = useData<Analytics>(`/api/admin/analytics?${qs(range, { department: name })}`);
+  const { data, fetchedAt, loading } = useData<Analytics>(`/api/admin/analytics?${qs(range, { department: name })}`);
   const { data: grid } = useData<Grid>(`/api/admin/contributions?${qs(range, { department: name })}`);
+  const { data: week } = useData<Analytics>(`/api/admin/analytics?${qs(weekOf(range.to), { department: name })}`);
   if (!data) return <Loading />;
   const fn = data.people[0]?.member.function ?? null;
   return <div className={`page${loading ? ' refreshing' : ''}`}>
     <a className="crumb" href="#/departments">‹ {w.departments}</a>
-    <Overview lang={lang} data={data} grid={grid} title={name} sub={`${fnName(lang, data.functionNames, fn)} · ${w.members(data.kpis.people)}`} companyLevel={false} />
+    <TitleRow lang={lang} title={name} sub={`${fnName(lang, data.functionNames, fn)} · ${w.members(data.kpis.people)}`} people={data.people} actions={<RangePicker lang={lang} range={range} onChange={onRange} />} />
+    <Overview lang={lang} data={data} fetchedAt={fetchedAt} grid={grid} week={week} companyLevel={false} />
   </div>;
 }
 
-export function Employees({ lang, range, me, onImport }: { lang: Lang; range: Range; me: Me; onImport: () => void }) {
+export function Employees({ lang, range, onRange, me, onImport }: ScreenProps & { me: Me; onImport: () => void }) {
   const w = t(lang); const [q, setQ] = useState(''); const [dept, setDept] = useState('');
   const { data, loading } = useData<Analytics>(`/api/admin/analytics?${qs(range)}`);
   if (!data) return <Loading />;
   const departments = [...new Set(data.people.map(p => p.member.department).filter(Boolean))].sort() as string[];
   const shown = data.people.filter(p => (!dept || p.member.department === dept) && (!q || `${p.member.name} ${p.member.nameAr ?? ''} ${p.member.email ?? ''} ${p.member.employeeId ?? ''} ${p.member.titleEn ?? ''}`.toLowerCase().includes(q.toLowerCase())));
   return <div className={`page${loading ? ' refreshing' : ''}`}>
-    <div className="page-head"><div className="team-title"><h2>{w.employees}</h2><span>{w.members(shown.length)}</span></div>
-      {me.role === 'admin' && <button className="btn" onClick={onImport}>{w.importList}</button>}</div>
+    <TitleRow lang={lang} title={`${w.companyName} · ${w.employees}`} sub={w.members(shown.length)} people={shown}
+      actions={<><RangePicker lang={lang} range={range} onChange={onRange} />{me.role === 'admin' && <button className="pill-btn light" onClick={onImport}><span aria-hidden="true">＋</span>{w.upload}</button>}</>} />
     <section className="card">
       <div className="filters"><input value={q} onChange={e => setQ(e.target.value)} placeholder={w.search} aria-label={w.search} />
         <select value={dept} onChange={e => setDept(e.target.value)} aria-label={w.department}><option value="">{w.allDepartments}</option>{departments.map(d => <option key={d}>{d}</option>)}</select></div>
@@ -243,10 +276,12 @@ export function Employees({ lang, range, me, onImport }: { lang: Lang; range: Ra
   </div>;
 }
 
-export function Employee({ lang, range, id }: { lang: Lang; range: Range; id: string }) {
+export function Employee({ lang, range, onRange, id }: ScreenProps & { id: string }) {
   const w = t(lang);
-  const { data, loading } = useData<Analytics>(`/api/admin/analytics?${qs(range, { person: id })}`);
+  const { data, fetchedAt, loading } = useData<Analytics>(`/api/admin/analytics?${qs(range, { person: id })}`);
   const { data: grid } = useData<Grid>(`/api/admin/contributions?${qs(range, { person: id })}`);
+  const week = weekOf(range.to);
+  const { data: weekData } = useData<Analytics>(`/api/admin/analytics?${qs(week, { person: id })}`);
   const dept = data?.people[0]?.member.department ?? null;
   const { data: peers } = useData<Analytics>(dept ? `/api/admin/analytics?${qs(range, { department: dept })}` : null);
   if (!data) return <Loading />;
@@ -254,34 +289,46 @@ export function Employee({ lang, range, id }: { lang: Lang; range: Range; id: st
   if (!me) return <div className="page"><a className="crumb" href="#/employees">‹ {w.employees}</a><p className="card">{w.notFound}</p></div>;
   const days = me.days ?? [], m = me.member;
   const today = days.find(d => d.date === data.range.today);
-  const taps = days.flatMap(d => d.taps.map(tap => ({ ...tap, date: d.date }))).slice(-12).reverse();
+  const taps = days.flatMap(d => d.taps.map(tap => ({ ...tap, date: d.date }))).slice(-8).reverse();
   const ranked = peers ? [...peers.people].filter(p => p.present >= 3).sort((a, b) => (b.onTimeRate ?? 0) - (a.onTimeRate ?? 0)) : [];
   const rank = ranked.findIndex(p => p.member.key === m.key);
+  const expected = me.expected || 1;
+  const weekDays = Array.from({ length: 7 }, (_, i) => shift(week.from, i));
+  // Today's total first, then each stretch inside the building (latest first), like the concept's task list.
+  const stretches: LiveRow[] = [];
+  if (today) { let open: number | null = null; for (const tap of today.taps) { if (tap.direction === 'in') { if (open === null) open = tap.at; } else if (open !== null) { stretches.push({ key: `${open}`, name: `${clock(lang, open)} – ${clock(lang, tap.at)}`, sub: w.session, minutesAtFetch: Math.round((tap.at - open) / 60_000), inside: false }); open = null; } }
+    if (open !== null && today.inside) stretches.push({ key: `${open}`, name: `${clock(lang, open)} – …`, sub: w.inside, minutesAtFetch: Math.round((fetchedAt - open) / 60_000), inside: true }); }
+  const sessions: LiveRow[] = today?.taps.length ? [{ key: m.key, name: nameOf(lang, m), sub: '', minutesAtFetch: me.today.minutes, inside: me.today.inside }, ...stretches.reverse()] : [];
   return <div className={`page${loading ? ' refreshing' : ''}`}>
     <a className="crumb" href="#/employees">‹ {w.employees}</a>
-    {peers && <PeopleStrip lang={lang} title={m.department ?? w.employees} sub={w.members(peers.kpis.people)} people={peers.people} active={m.key} />}
+    <TitleRow lang={lang} title={m.department ?? w.employees} sub={peers ? w.members(peers.kpis.people) : ''} people={peers?.people ?? []} active={m.key} actions={<RangePicker lang={lang} range={range} onChange={onRange} />} />
     <div className="grid">
-      <section className="card profile span-4">
-        <div className="profile-face"><span className="avatar xl">{initials(m.name)}</span>{today?.inside && <span className="live-tag"><i />{w.inside} · {w.since} {clock(lang, today.firstIn)}</span>}</div>
-        <div className="profile-info"><div><h2>{nameOf(lang, m)}</h2><span>{titleOf(lang, m)}</span>
-          <small>{m.department && <a href={deptHash(m.department)}>{m.department}</a>}{m.employeeId ? ` · ${m.employeeId}` : ''}{m.officeNumber ? ` · ${w.office} ${m.officeNumber}` : ''}</small></div>
-          {m.email && <a className="icon-btn" href={`mailto:${m.email}`} aria-label={w.email}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3Zm2 2v.5l7 4.5 7-4.5V7Zm14 10V9.8l-7 4.5-7-4.5V17Z" /></svg></a>}</div>
+      <section className="card portrait span-3 row-2">
+        <div className="portrait-art"><span className="avatar xl">{initials(m.name)}</span>{today?.inside && <span className="live-tag"><i />{w.inside} · {w.since} {clock(lang, today.firstIn)}</span>}</div>
+        <div className="portrait-chip"><div><b>{nameOf(lang, m)}</b><small>{titleOf(lang, m)}</small></div>
+          <div className="chip-actions">{m.department && <a className="round" href={deptHash(m.department)} aria-label={w.department} title={m.department}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm0 2c-2.3 0-7 1.2-7 3.5V19h14v-2.5C15 14.2 10.3 13 8 13Zm8 0c-.3 0-.6 0-1 .1a4.2 4.2 0 0 1 2 3.4V19h6v-2.5c0-2.3-4.7-3.5-7-3.5Z" /></svg></a>}
+            {m.email && <a className="round light" href={`mailto:${m.email}`} aria-label={w.email} title={m.email}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3Zm2 2v.5l7 4.5 7-4.5V7Zm14 10V9.8l-7 4.5-7-4.5V17Z" /></svg></a>}</div></div>
       </section>
-      <div className="kpis span-8">
-        <Kpi value={percent(me.attendanceRate)} label={w.attendanceRate} hint={`${me.present} ${w.daysPresent}`} />
-        <Kpi value={percent(me.onTimeRate)} label={w.onTimeRate} tone="good" hint={rank >= 0 ? `${w.rank} ${rank + 1}/${ranked.length} ${w.inDepartment}` : undefined} />
-        <Kpi value={duration(lang, me.averageMinutes)} label={w.averageDay} hint={`${w.medianArrival} ${minuteClock(me.medianArrival)}`} />
-        <Kpi value={duration(lang, me.averageOutside)} label={w.averageOutside} tone="outside" hint={`${me.averageBreaks} ${w.breaks} ${w.perDay}`} />
-        <Kpi value={String(me.streak)} label={w.streak} tone="good" hint={`${w.bestStreak} ${me.bestStreak}`} />
-        <Kpi value={duration(lang, me.lateMinutes)} label={w.lateMinutes} tone="warning" hint={`${me.yellow} ${w.lateDays} · ${me.red} ${w.absentDays}`} />
+      <section className="card span-3 accent-card"><LiveTimer lang={lang} title={w.insideToday} rows={sessions} fetchedAt={fetchedAt} emptyLabel={w.notIn} />
+        <p className="foot">{m.employeeId ?? ''}{m.officeNumber ? ` · ${w.office} ${m.officeNumber}` : ''}</p></section>
+      <Card title={w.attendanceMix} className="span-3"><Rings center={percent(me.attendanceRate)} centerLabel={`${me.present} ${w.daysPresent}`} parts={[{ label: w.onTime, value: me.green / expected, color: STATUS.good }, { label: w.late, value: me.yellow / expected, color: STATUS.warning }, { label: w.absent, value: me.red / expected, color: STATUS.critical }]} /></Card>
+      <div className="stack span-3 row-2">
+        <Card title={w.weeklyActivity} extra={<span className="pill">{w.medianArrival} {minuteClock(me.medianArrival)}</span>} className="grow"><WorkActivity lang={lang} matrix={data.weekHours} /></Card>
+        <Card title={w.recentTaps}><ol className="taps">{taps.map(tap => <li key={tap.at} className={tap.direction}><b>{tap.direction === 'in' ? w.in : w.out}</b><span>{shortDate(lang, tap.date)}</span><strong>{clock(lang, tap.at)}</strong></li>)}{!taps.length && <li className="muted">{w.noData}</li>}</ol></Card>
       </div>
-      <Card title={w.dailyHours} extra={<span className="pill">{w.required} {duration(lang, data.rules.requiredMinutes)}</span>} className="span-8"><DailyHours lang={lang} days={days} required={data.rules.requiredMinutes} /></Card>
-      <Card title={w.arrivals} extra={<span className="pill">{w.medianArrival} {minuteClock(me.medianArrival)}</span>} className="span-4"><ArrivalDots lang={lang} days={days} start={data.rules.workStartMinutes} grace={data.rules.lateGraceMinutes} /></Card>
+      <div className="tiles span-6 four">
+        <Tile value={String(me.streak)} label={w.streak} tone="good" hint={`${w.bestStreak} ${me.bestStreak}`} />
+        <Tile value={percent(me.onTimeRate)} label={w.onTimeRate} hint={rank >= 0 ? `${w.rank} ${rank + 1}/${ranked.length} ${w.inDepartment}` : undefined} />
+        <Tile value={duration(lang, me.averageMinutes)} label={w.averageDay} hint={`${w.medianArrival} ${minuteClock(me.medianArrival)}`} />
+        <Tile value={duration(lang, me.averageOutside)} label={w.averageOutside} tone="outside" hint={`${me.averageBreaks} ${w.breaks} ${w.perDay} · ${duration(lang, me.lateMinutes)} ${w.lateMinutes}`} />
+      </div>
+      <Card title={w.weekOverview} extra={<span className="pill">{shortDate(lang, week.from)} – {shortDate(lang, week.to)}</span>} className="span-12"><WeekBoard lang={lang} days={weekDays} today={data.range.today} cards={sessionCards(lang, weekData?.people[0]?.days ?? [], week)} /></Card>
+      <Card title={w.dailyHours} extra={<span className="pill">{w.required} {duration(lang, data.rules.requiredMinutes)}</span>} className="span-8 chart-card"><DailyHours lang={lang} days={days} required={data.rules.requiredMinutes} /></Card>
+      <Card title={w.arrivals} className="span-4 chart-card"><ArrivalDots lang={lang} days={days} start={data.rules.workStartMinutes} grace={data.rules.lateGraceMinutes} /></Card>
       <Card title={w.yearActivity} className="span-12">{grid ? <YearGrid lang={lang} days={grid.days} perPerson /> : <Loading />}</Card>
       <Card title={w.timeline} className="span-8"><DayTimeline lang={lang} days={days} /></Card>
-      <Card title={w.weeklyActivity} className="span-4"><WeekHours lang={lang} matrix={data.weekHours} fromHour={7} toHour={20} /></Card>
-      <Card title={w.recentTaps} className="span-6"><ol className="taps">{taps.map(tap => <li key={tap.at} className={tap.direction}><b>{tap.direction === 'in' ? w.in : w.out}</b><span>{shortDate(lang, tap.date)}</span><strong>{clock(lang, tap.at)}</strong></li>)}{!taps.length && <li className="muted">{w.noData}</li>}</ol></Card>
-      <Card title={w.doors} className="span-6"><DoorList lang={lang} doors={data.doors} /><p className="foot">{rulesText(lang, data.rules)}</p></Card>
+      <Card title={w.doors} className="span-4"><DoorList lang={lang} doors={data.doors.slice(0, 5)} /></Card>
+      <p className="foot span-12">{rulesText(lang, data.rules)} {longDate(lang, data.range.today)}</p>
     </div>
   </div>;
 }

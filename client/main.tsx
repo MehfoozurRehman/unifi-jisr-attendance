@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './app.css';
-import { Company, Department, Departments, Employee, Employees, RangePicker, go, initials, presetRange, type Me, type Member, type Preset, type Range } from './screens';
+import { Company, Department, Departments, Employee, Employees, go, initials, presetRange, type Me, type Member, type Preset, type Range } from './screens';
 import { t, todayLong, type Lang } from './i18n';
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -58,7 +58,7 @@ function App() {
   const [importing, setImporting] = useState(false); const [toast, setToast] = useState('');
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [lang, setLangState] = useState<Lang>(() => (read('zood.lang') === 'en' ? 'en' : 'ar'));
-  const [range, setRangeState] = useState<Range>(() => { const p = read('zood.range') as Preset | null; return presetRange(p && ['7', '30', '90', 'month', 'year'].includes(p) ? p : '30'); });
+  const [range, setRangeState] = useState<Range>(() => { const p = read('zood.range') as Preset | null; return presetRange(p && ['today', '7', '30', '90', 'month', 'year'].includes(p) ? p : '30'); });
   const [where, setWhere] = useState(route());
   useEffect(() => { const on = () => { setWhere(route()); window.scrollTo(0, 0); }; window.addEventListener('hashchange', on); return () => window.removeEventListener('hashchange', on); }, []);
   const loadMe = () => fetch('/api/admin/me').then(r => r.ok ? r.json() : false).then(setMe).catch(() => setMe(false));
@@ -85,29 +85,27 @@ function App() {
     <input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder={w.password} aria-label={w.password} />
     <button className="btn primary">{w.signIn}</button>{error && <p className="error" role="alert">{error}</p>}
     <button type="button" className="link" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{w.language}</button></form></main>;
-  const tab = (page: Route['page'], match: Route['page'][], href: string, label: string) => <a className={`chip${match.includes(where.page) ? ' on' : ''}`} href={href} aria-current={page === where.page ? 'page' : undefined}>{label}</a>;
-  return <div className="app">
+  const tab = (page: Route['page'], match: Route['page'][], href: string, label: string) => <a className={match.includes(where.page) ? 'on' : ''} href={href} aria-current={page === where.page ? 'page' : undefined}>{label}</a>;
+  const screen = { lang, range, onRange: setRange };
+  return <div className="frame"><div className="app">
     <header className="topbar">
-      <a className="brand" href="#/" aria-label={w.company}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.replaceWith(Object.assign(document.createElement('b'), { textContent: 'ZOOD' })); }} /><span><b>{w.product}</b><small>{todayLong(lang)}</small></span></a>
+      <a className="brand" href="#/" aria-label={w.company}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.replaceWith(Object.assign(document.createElement('b'), { textContent: 'ZOOD' })); }} /><span><small>{todayLong(lang)}</small><b>{w.product}</b></span></a>
+      <nav className="tabs" aria-label={w.product}>{tab('company', ['company'], '#/', w.company)}{tab('departments', ['departments', 'department'], '#/departments', w.departments)}{tab('employees', ['employees', 'employee'], '#/employees', w.employees)}{me.role === 'admin' && tab('events', ['events'], '#/events', w.events)}</nav>
       <Search lang={lang} />
       <div className="top-actions">
-        <button className="chip" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{w.language}</button>
-        <div className="user"><span className="avatar sm">{initials(me.displayName)}</span><span><b>{me.displayName}</b><small>{me.role === 'admin' ? w.admin : w.hr}</small></span>
-          <button className="icon-btn" aria-label={w.signOut} title={w.signOut} onClick={async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3H4v18h6v-2H6V5h4Zm6 4-1.4 1.4 2.6 2.6H9v2h8.2l-2.6 2.6L16 17l5-5Z" /></svg></button></div>
+        <button className="round" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} aria-label={w.language} title={w.language}>{lang === 'ar' ? 'EN' : 'ع'}</button>
+        <div className="user"><span className="avatar">{initials(me.displayName)}</span><span><b>{me.displayName}</b><small>{me.role === 'admin' ? w.admin : w.hr}</small></span>
+          <button className="round" aria-label={w.signOut} title={w.signOut} onClick={async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3H4v18h6v-2H6V5h4Zm6 4-1.4 1.4 2.6 2.6H9v2h8.2l-2.6 2.6L16 17l5-5Z" /></svg></button></div>
       </div>
     </header>
-    <nav className="subbar" aria-label={w.product}>
-      <div className="tabs">{tab('company', ['company'], '#/', w.company)}{tab('departments', ['departments', 'department'], '#/departments', w.departments)}{tab('employees', ['employees', 'employee'], '#/employees', w.employees)}{me.role === 'admin' && tab('events', ['events'], '#/events', w.events)}</div>
-      {where.page !== 'events' && <RangePicker lang={lang} range={range} onChange={setRange} />}
-    </nav>
     <input ref={fileInput} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void upload(f); }} />
     {(importing || toast) && <div className="toast" role="status">{importing ? w.importing : toast}</div>}
-    {where.page === 'company' && <Company lang={lang} range={range} me={me} onImport={startImport} />}
-    {where.page === 'departments' && <Departments lang={lang} range={range} />}
-    {where.page === 'department' && <Department lang={lang} range={range} name={where.name} />}
-    {where.page === 'employees' && <Employees lang={lang} range={range} me={me} onImport={startImport} />}
-    {where.page === 'employee' && <Employee lang={lang} range={range} id={where.id} />}
+    {where.page === 'company' && <Company {...screen} me={me} onImport={startImport} />}
+    {where.page === 'departments' && <Departments {...screen} />}
+    {where.page === 'department' && <Department {...screen} name={where.name} />}
+    {where.page === 'employees' && <Employees {...screen} me={me} onImport={startImport} />}
+    {where.page === 'employee' && <Employee {...screen} id={where.id} />}
     {where.page === 'events' && me.role === 'admin' && <Ledger />}
-  </div>;
+  </div></div>;
 }
 createRoot(document.getElementById('root')!).render(<App />);
