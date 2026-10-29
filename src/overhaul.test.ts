@@ -33,4 +33,14 @@ describe('production attendance flow', () => {
   it('accepts Jisr minute precision when confirming a punch', async () => { const fetcher=async(input:any)=>String(input).endsWith('/openapi/v1/auth') ? new Response(JSON.stringify({success:true,data:'token'}),{status:200}) : new Response(JSON.stringify({success:true,data:{punches:[{clocking_id:9,employee_code:'007',punch_time:'2026-09-13T08:20:00.000Z'}]}}),{status:200}); const client=new JisrClient(config,fetcher as typeof fetch); expect((await client.confirm({id:9,emp_code:'007',terminal_sn:'reader',punch_time:'2026-09-13T08:20:17.000Z'})).outcome).toBe('confirmed'); });
   it('resolves a nameless card tap via the UniFi directory and submits it', async () => { const s=new Store(':memory:'); const f=new Fake(); const unifi: UnifiDirectory = { emailForUser: async () => 'exact@example.com' }; const w=new Worker(s,f,{...config,REORDER_WINDOW_MS:0},()=>now,unifi); const raw=event('1789287595','exited'); delete (raw as Record<string,unknown>).user_email; delete (raw as Record<string,unknown>).user_name; s.ingest(JSON.stringify(raw),now,{...config,REORDER_WINDOW_MS:0}); await w.tick(); expect(f.submissions).toHaveLength(1); expect(s.event(1)?.email).toBe('exact@example.com'); s.close(); });
   it('backs off instead of hammering UniFi when the lookup cannot resolve an email', async () => { const s=new Store(':memory:'); const f=new Fake(); let calls=0; const unifi: UnifiDirectory = { emailForUser: async () => { calls++; return null; } }; const localConfig={...config,REORDER_WINDOW_MS:0}; const w=new Worker(s,f,localConfig,()=>now,unifi); const raw=event('1789287595','exited'); delete (raw as Record<string,unknown>).user_email; delete (raw as Record<string,unknown>).user_name; s.ingest(JSON.stringify(raw),now,localConfig); await w.tick(); await w.tick(); await w.tick(); expect(calls).toBe(1); expect(s.event(1)?.status).toBe('held'); });
+  it('resolves the UniFi email while the Jisr directory is unavailable and submits once it loads', async () => {
+    const s=new Store(':memory:'); const f=new Fake(); let jisrUp=false; f.employees=async()=>{ if(!jisrUp) throw new Error('Jisr authentication failed (401)'); return f.employeesList; };
+    const unifi: UnifiDirectory = { emailForUser: async () => 'exact@example.com' }; const localConfig={...config,REORDER_WINDOW_MS:0};
+    let clock=now; const w=new Worker(s,f,localConfig,()=>clock,unifi);
+    const raw=event('1789287595','exited'); delete (raw as Record<string,unknown>).user_email; s.ingest(JSON.stringify(raw),now,localConfig);
+    await w.tick();
+    expect(s.event(1)?.email).toBe('exact@example.com'); expect(s.event(1)?.reason).toBe('Waiting for employee directory'); expect(f.submissions).toHaveLength(0);
+    jisrUp=true; clock=now+120_000; await w.tick();
+    expect(f.submissions).toHaveLength(1); expect(s.event(1)?.employeeCode).toBe('007'); s.close();
+  });
 });
