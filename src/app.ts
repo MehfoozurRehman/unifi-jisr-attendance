@@ -10,6 +10,7 @@ import { analyze, contributions, members, type Scope } from './analytics.js';
 import { authenticate, clearFailures, ensureStaff, listStaff, loginBlocked, recordFailure } from './staff.js';
 import { directory, ensureDirectory, functionNames, parseEmployeeWorkbook, saveDirectory } from './directory.js';
 import { getRules, saveRules, withRules } from './rules.js';
+import { health } from './health.js';
 
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
@@ -89,6 +90,8 @@ export function createApp(store: Store, worker: Worker, config: Config, publicDi
   app.put('/api/admin/settings/rules', async c => {
     try { return c.json({ ok: true, rules: saveRules(store, await c.req.json()) }); } catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Invalid rules' }, 400); }
   });
+  // System health for the Settings page; ?refresh=1 re-runs the live Jisr and UniFi checks (otherwise cached for a minute).
+  app.get('/api/admin/health', async c => c.json(await health(store, config, worker.gateway, worker.unifi, { refresh: c.req.query('refresh') === '1' })));
   // Brand files (logo, licensed fonts) live outside the repository in ./brand and are optional.
   app.get('/brand/*', c => { try { const root = resolve(join(process.cwd(), 'brand')); const path = resolve(root, `.${c.req.path.slice('/brand'.length)}`); if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) return c.notFound(); return new Response(readFileSync(path), { headers: { 'Content-Type': path.endsWith('.png') ? 'image/png' : path.endsWith('.svg') ? 'image/svg+xml' : path.endsWith('.ttf') ? 'font/ttf' : path.endsWith('.woff2') ? 'font/woff2' : 'application/octet-stream', 'Cache-Control': 'public, max-age=86400' } }); } catch { return c.notFound(); } });
   app.get('/assets/*', c => { try { const root = resolve(publicDir); const path = resolve(root, `.${c.req.path}`); if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) return c.notFound(); const content = readFileSync(path); return new Response(content, { headers: { 'Content-Type': path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : 'application/octet-stream', 'Cache-Control': 'public, max-age=31536000, immutable' } }); } catch { return c.notFound(); } });

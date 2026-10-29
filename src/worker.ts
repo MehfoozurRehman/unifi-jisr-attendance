@@ -12,7 +12,7 @@ export class Worker {
       const now = this.clock();
       if (now - Number(this.store.setting('employeesRefreshedAt') || 0) > this.config.EMPLOYEE_REFRESH_MS && now >= Number(this.store.setting('employeeRetryAt') || 0)) {
         try { this.store.replaceEmployees(await this.gateway.employees(), now); }
-        catch (e) { this.store.set('employeeError', String(e)); this.store.set('employeeRetryAt', String(now + 60_000)); }
+        catch (e) { this.store.set('employeeError', e instanceof Error && e.cause instanceof Error ? `${e.message}: ${e.cause.message}` : String(e)); this.store.set('employeeRetryAt', String(now + 60_000)); }
       }
       for (const event of this.store.unresolved(now)) await this.reconcile(event);
       if (this.store.setting('paused') === 'true') { this.store.set('workerLastTick', String(this.clock())); return; }
