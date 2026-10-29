@@ -1,5 +1,5 @@
 import type { Config } from './config.js';
-import type { Confirmation, Employee, JisrGateway, Punch, Submission } from './domain.js';
+import type { Confirmation, Employee, JisrGateway, Probe, Punch, Submission } from './domain.js';
 
 const text = (value: unknown) => typeof value === 'string' ? value : '';
 const wallTime = (instant: number, timezone: string) => new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date(instant)).replace(',', '');
@@ -58,6 +58,32 @@ export class JisrClient implements JisrGateway {
     if (response.status === 401) { this.token = ''; return { outcome: 'retry', message: 'Jisr authorization expired; retry scheduled', response: body }; }
     if (response.status === 408 || response.status === 429 || response.status >= 500) return { outcome: 'uncertain', message: `Jisr response ${response.status}; confirmation required before retry`, response: body };
     return { outcome: 'rejected', message: `Jisr rejected the punch (${response.status})`, response: body };
+  }
+  /** Read-only checks for the health panel: sign-in, then one small read of each API the middleware uses. Sends nothing. */
+  async probe(): Promise<{ auth: Probe; employees: Probe; attendance: Probe }> {
+    const skipped: Probe = { ok: false, status: null, message: 'skipped' };
+    // fetch reports "fetch failed"; the cause says why (refused, DNS, certificate, timeout).
+    const failure = (error: unknown): Probe => ({ ok: false, status: null, message: error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.cause instanceof Error ? error.cause.message : error.message) : String(error) });
+    // Its own sign-in, so a probe never replaces the token the worker is using.
+    let token = '';
+    try {
+      const { response, body } = await this.request('/openapi/v1/auth', { method: 'POST', headers: { 'Content-Type': 'application/json', slug: this.config.JISR_SLUG, 'api-key': this.config.JISR_API_KEY, secret: this.config.JISR_API_SECRET, 'api-version': '1', source: 'open_api' } });
+      if (!response.ok || !body?.success || !text(body.data)) return { auth: { ok: false, status: response.status, message: 'authFailed' }, employees: skipped, attendance: skipped };
+      token = body.data;
+    } catch (error) { return { auth: failure(error), employees: skipped, attendance: skipped }; }
+    const read = async (path: string): Promise<Probe> => {
+      try {
+        const { response, body } = await this.request(path, { headers: { ...this.headers(), 'Access-Token': token } });
+        if (response.ok && body?.success !== false) return { ok: true, status: response.status, message: 'ok' };
+        return { ok: false, status: response.status, message: response.status === 403 ? 'notAuthorized' : text(body?.error) || 'httpError' };
+      } catch (error) { return failure(error); }
+    };
+    const now = Date.now(), from = encodeURIComponent(new Date(now - 3_600_000).toISOString()), to = encodeURIComponent(new Date(now).toISOString());
+    const [employees, attendance] = await Promise.all([
+      read('/openapi/v1/employees?rpp=1&page=1'),
+      read(`/openapi/v1/attendance_logs?status=success&from=${from}&to=${to}&limit=1&page=1`),
+    ]);
+    return { auth: { ok: true, status: 200, message: 'ok' }, employees, attendance };
   }
   async confirm(punch: Punch): Promise<Confirmation> {
     await this.prepare();

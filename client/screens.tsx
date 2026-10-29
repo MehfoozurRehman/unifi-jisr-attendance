@@ -333,6 +333,59 @@ export function Employee({ lang, range, onRange, id }: ScreenProps & { id: strin
   </div>;
 }
 
+/* ---------- system health (Settings) ---------- */
+export type HealthLevel = 'ok' | 'warn' | 'fail' | 'off';
+type HealthCheck = { id: string; group: 'jisr' | 'unifi' | 'system' | 'data'; level: HealthLevel; code: string; params?: Record<string, any> };
+export type HealthReport = { level: HealthLevel; checkedAt: number; liveCheckedAt: number; checks: HealthCheck[] };
+const LEVEL_ICON: Record<HealthLevel, string> = { ok: '✓', warn: '!', fail: '✕', off: '–' };
+const span = (lang: Lang, ms: number) => {
+  const s = Math.max(0, ms / 1000), [value, unit] = s < 90 ? [Math.round(s), 'second'] : s < 5400 ? [Math.round(s / 60), 'minute'] : s < 129600 ? [Math.round(s / 3600), 'hour'] : [Math.round(s / 86400), 'day'];
+  return new Intl.NumberFormat(lang === 'ar' ? 'ar-SA-u-nu-latn' : 'en-GB', { style: 'unit', unit, unitDisplay: 'long' }).format(value);
+};
+// Isolated left-to-right so "0.2 MB" keeps its order inside Arabic text.
+const megabytes = (bytes: number) => `⁦${(bytes / 1_048_576).toLocaleString('en', { maximumFractionDigits: 1 })} MB⁩`;
+function healthText(lang: Lang, check: HealthCheck, now: number) {
+  const h = t(lang).health, p = { ...(check.params ?? {}) };
+  if (typeof p.at === 'number') { p.agoBare = span(lang, now - p.at); p.ago = now - p.at < 15_000 ? h.justNow : h.ago(p.agoBare); } else { p.ago = h.never; p.agoBare = h.never; }
+  if (Array.isArray(p.names)) p.names = p.names.join(lang === 'ar' ? '، ' : ', ');
+  if (typeof p.size === 'number') p.size = megabytes(p.size);
+  if (typeof p.memory === 'number') p.memory = megabytes(p.memory);
+  if (typeof p.uptime === 'number') p.uptime = span(lang, p.uptime * 1000);
+  return (h.messages[check.code] ?? (() => check.code))(p);
+}
+export function HealthPanel({ lang }: { lang: Lang }) {
+  const w = t(lang), h = w.health;
+  const [report, setReport] = useState<HealthReport | null>(null); const [busy, setBusy] = useState(false); const [now, setNow] = useState(Date.now());
+  const load = async (refresh = false) => { setBusy(true); try { setReport(await get<HealthReport>(`/api/admin/health${refresh ? '?refresh=1' : ''}`)); } catch { /* keep the last report */ } finally { setBusy(false); setNow(Date.now()); } };
+  useEffect(() => { void load(); const timer = setInterval(() => void load(), 60_000); const tick = setInterval(() => setNow(Date.now()), 15_000); return () => { clearInterval(timer); clearInterval(tick); }; }, []);
+  if (!report) return <section className="card span-12 health"><Loading /></section>;
+  const tally = (['fail', 'warn', 'ok', 'off'] as const).map(l => [l, report.checks.filter(c => c.level === l).length] as const).filter(([, n]) => n);
+  const groups = (['jisr', 'unifi', 'system', 'data'] as const).map(g => [g, report.checks.filter(c => c.group === g)] as const);
+  return <section className="card span-12 health" aria-busy={busy}>
+    <header className="card-head">
+      <h3>{h.title}</h3>
+      <div className="health-meta">
+        <span className={`health-pill ${report.level}`} role="status"><i aria-hidden="true">{LEVEL_ICON[report.level]}</i>{h.overall[report.level]}</span>
+        <span className="muted">{h.checked(now - report.liveCheckedAt < 15_000 ? h.justNow : h.ago(span(lang, now - report.liveCheckedAt)))}</span>
+        <button type="button" className="pill-btn" onClick={() => void load(true)} disabled={busy}>{busy ? h.checking : h.refresh}</button>
+      </div>
+    </header>
+    <div className="health-bar" role="img" aria-label={tally.map(([l, n]) => `${n} ${h.level[l]}`).join(', ')}>
+      {report.checks.map(c => <span key={c.id} className={c.level} title={`${h.titles[c.id] ?? c.id}: ${h.level[c.level]}`} />)}
+    </div>
+    <div className="health-tally">{tally.map(([l, n]) => <span key={l} className={l}><i aria-hidden="true">{LEVEL_ICON[l]}</i>{n} {h.level[l]}</span>)}</div>
+    <div className="health-groups">
+      {groups.map(([g, checks]) => <div key={g} className="health-group">
+        <h4>{h.groups[g]}</h4>
+        <ul>{checks.map(c => <li key={c.id} className={c.level}>
+          <i aria-label={h.level[c.level]}>{LEVEL_ICON[c.level]}</i>
+          <div><b>{h.titles[c.id] ?? c.id}</b><span>{healthText(lang, c, now)}</span></div>
+        </li>)}</ul>
+      </div>)}
+    </div>
+  </section>;
+}
+
 /* ---------- settings: work rules (HR and admins) ---------- */
 export function Settings({ lang }: { lang: Lang }) {
   const w = t(lang);
@@ -349,8 +402,9 @@ export function Settings({ lang }: { lang: Lang }) {
   };
   const lateFrom = rules.workStartMinutes + rules.lateGraceMinutes;
   return <div className="page">
-    <div className="title-row"><div className="title"><h1>{w.settings}</h1><span>{w.workRules}</span></div><span /><span /></div>
+    <div className="title-row"><div className="title"><h1>{w.settings}</h1><span>{w.health.title} · {w.workRules}</span></div><span /><span /></div>
     <div className="grid">
+      <HealthPanel lang={lang} />
       <form className="card span-8 settings" onSubmit={save}>
         <header className="card-head"><h3>{w.workRules}</h3></header>
         <p className="muted help">{w.rulesHelp}</p>
