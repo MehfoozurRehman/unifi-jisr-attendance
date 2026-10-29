@@ -1,6 +1,9 @@
 node_modules
 dist
 public
+temp_auto_push.bat
 coverage
 *.log
 data/
+.gitignore
+branch_structure.json
