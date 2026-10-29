@@ -7,6 +7,8 @@ export interface DaySummary {
   date: string; weekday: number; workday: boolean; status: DayStatus;
   firstIn: number | null; lastOut: number | null; minutes: number;
   late: boolean; short: boolean; missingOut: boolean; missingIn: boolean; inside: boolean; taps: Tap[];
+  /** Times the person stepped out and came back during the day, and the minutes spent outside between first in and last out. */
+  breaks: number; outsideMinutes: number; lateMinutes: number; overtimeMinutes: number;
 }
 export interface Person { key: string; name: string | null; email: string | null; userId: string | null; employeeCode: string | null; department: string | null; managerEmail: string | null }
 
@@ -34,9 +36,13 @@ export function summarizeDay(date: string, taps: Tap[], config: Config, now: num
   const today = localDate(now, config.TIMEZONE);
   const sorted = [...taps].sort((a, b) => a.at - b.at);
   let open: number | null = null, minutes = 0, firstIn: number | null = null, lastOut: number | null = null, missingIn = false;
+  let breaks = 0, outsideMinutes = 0, closedAt: number | null = null;
   for (const tap of sorted) {
-    if (tap.direction === 'in') { if (open === null) open = tap.at; firstIn ??= tap.at; }
-    else if (open !== null) { minutes += Math.round((tap.at - open) / 60_000); open = null; lastOut = tap.at; }
+    if (tap.direction === 'in') {
+      if (open === null) { open = tap.at; if (closedAt !== null) { breaks++; outsideMinutes += Math.round((tap.at - closedAt) / 60_000); closedAt = null; } }
+      firstIn ??= tap.at;
+    }
+    else if (open !== null) { minutes += Math.round((tap.at - open) / 60_000); open = null; lastOut = tap.at; closedAt = tap.at; }
     else { missingIn = true; lastOut = tap.at; } // an exit with no entry: the time before it cannot be counted
   }
   const isToday = date === today, inside = isToday && open !== null;
@@ -56,7 +62,9 @@ export function summarizeDay(date: string, taps: Tap[], config: Config, now: num
   else if (!workday) status = 'green';
   else if (late || short || (missingIn && !partialDay)) status = 'yellow';
   else status = isToday && inside ? 'today' : 'green';
-  return { date, weekday, workday, status, firstIn, lastOut, minutes, late, short, missingOut, missingIn, inside, taps: sorted };
+  const lateMinutes = late && firstIn !== null ? dateParts(firstIn, config.TIMEZONE).minutes - config.WORK_START_MINUTES : 0;
+  const overtimeMinutes = workday && !isToday && !partialDay ? Math.max(0, minutes - config.REQUIRED_MINUTES) : 0;
+  return { date, weekday, workday, status, firstIn, lastOut, minutes, late, short, missingOut, missingIn, inside, taps: sorted, breaks, outsideMinutes, lateMinutes, overtimeMinutes };
 }
 
 export class Attendance {

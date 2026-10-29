@@ -1,22 +1,31 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './app.css';
-import { Dashboard, Employee, RangePicker, go, initials, presetRange, type Person, type Preset, type Range } from './pages';
+import { Company, Department, Departments, Employee, Employees, RangePicker, go, initials, presetRange, type Me, type Member, type Preset, type Range } from './screens';
 import { t, todayLong, type Lang } from './i18n';
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
-const route = () => { const h = location.hash.replace(/^#/, ''); if (h.startsWith('/employee/')) return { page: 'employee' as const, key: decodeURIComponent(h.slice('/employee/'.length)) }; if (h === '/events') return { page: 'events' as const }; return { page: 'dashboard' as const }; };
+type Route = { page: 'company' } | { page: 'departments' } | { page: 'department'; name: string } | { page: 'employees' } | { page: 'employee'; id: string } | { page: 'events' };
+const route = (): Route => {
+  const h = location.hash.replace(/^#/, ''), tail = (p: string) => decodeURIComponent(h.slice(p.length));
+  if (h.startsWith('/employee/')) return { page: 'employee', id: tail('/employee/') };
+  if (h.startsWith('/department/')) return { page: 'department', name: tail('/department/') };
+  if (h === '/departments') return { page: 'departments' };
+  if (h === '/employees') return { page: 'employees' };
+  if (h === '/events') return { page: 'events' };
+  return { page: 'company' };
+};
 
 /* ---------- search ---------- */
 function Search({ lang }: { lang: Lang }) {
-  const w = t(lang); const [q, setQ] = useState(''); const [list, setList] = useState<Person[]>([]); const [open, setOpen] = useState(false);
+  const w = t(lang); const [q, setQ] = useState(''); const [list, setList] = useState<Member[]>([]); const [open, setOpen] = useState(false);
   useEffect(() => { if (!q.trim()) { setList([]); return; } const timer = setTimeout(() => void fetch(`/api/admin/people?q=${encodeURIComponent(q)}`).then(r => r.ok ? r.json() : []).then(setList).catch(() => setList([])), 150); return () => clearTimeout(timer); }, [q]);
-  const pick = (p: Person) => { go(`#/employee/${encodeURIComponent(p.key)}`); setQ(''); setOpen(false); };
+  const pick = (p: Member) => { go(`#/employee/${encodeURIComponent(p.employeeId ?? p.key)}`); setQ(''); setOpen(false); };
   return <div className="search">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3Zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z" /></svg>
     <input value={q} placeholder={w.search} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={e => { if (e.key === 'Enter' && list[0]) pick(list[0]); }} aria-label={w.search} />
-    {open && list.length > 0 && <div className="search-menu">{list.slice(0, 8).map(p => <button key={p.key} onMouseDown={() => pick(p)}><span className="avatar sm">{initials(p.name)}</span><span><b>{p.name}</b><small>{p.email || w.noEmail}</small></span></button>)}</div>}
+    {open && list.length > 0 && <div className="search-menu">{list.slice(0, 8).map(p => <button key={p.key} onMouseDown={() => pick(p)}><span className="avatar sm">{initials(p.name)}</span><span><b>{(lang === 'ar' && p.nameAr) || p.name}</b><small>{p.department ?? p.email ?? w.noEmail}</small></span></button>)}</div>}
   </div>;
 }
 
@@ -45,34 +54,60 @@ function Ledger() {
 
 /* ---------- app ---------- */
 function App() {
-  const [auth, setAuth] = useState<boolean | null>(null); const [password, setPassword] = useState(''); const [error, setError] = useState('');
+  const [me, setMe] = useState<Me | null | false>(null); const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState('');
+  const [importing, setImporting] = useState(false); const [toast, setToast] = useState('');
+  const fileInput = React.useRef<HTMLInputElement>(null);
   const [lang, setLangState] = useState<Lang>(() => (read('zood.lang') === 'en' ? 'en' : 'ar'));
   const [range, setRangeState] = useState<Range>(() => { const p = read('zood.range') as Preset | null; return presetRange(p && ['7', '30', '90', 'month', 'year'].includes(p) ? p : '30'); });
   const [where, setWhere] = useState(route());
   useEffect(() => { const on = () => { setWhere(route()); window.scrollTo(0, 0); }; window.addEventListener('hashchange', on); return () => window.removeEventListener('hashchange', on); }, []);
-  useEffect(() => { void fetch('/api/admin/summary').then(r => setAuth(r.ok)).catch(() => setAuth(false)); }, []);
+  const loadMe = () => fetch('/api/admin/me').then(r => r.ok ? r.json() : false).then(setMe).catch(() => setMe(false));
+  useEffect(() => { void loadMe(); }, []);
   useEffect(() => { document.documentElement.lang = lang; document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr'; }, [lang]);
   const setLang = (l: Lang) => { setLangState(l); write('zood.lang', l); };
   const setRange = (r: Range) => { setRangeState(r); if (r.preset !== 'custom') write('zood.range', r.preset); };
   const w = t(lang);
-  const login = async (e: React.FormEvent) => { e.preventDefault(); const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) }); if (r.ok) setAuth(true); else setError(lang === 'ar' ? 'كلمة المرور غير صحيحة' : 'Incorrect password'); };
-  if (auth === null) return <div className="loading">…</div>;
-  if (!auth) return <main className="login-page"><form className="card login" onSubmit={login}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.style.display = 'none'; }} /><h1>{w.product}</h1><input autoFocus type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={lang === 'ar' ? 'كلمة مرور اللوحة' : 'Dashboard password'} /><button className="btn primary">{lang === 'ar' ? 'دخول' : 'Sign in'}</button>{error && <p className="error">{error}</p>}<button type="button" className="link" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{w.language}</button></form></main>;
+  const login = async (e: React.FormEvent) => {
+    e.preventDefault(); setError('');
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: username.trim().toLowerCase(), password }) });
+    if (r.ok) { setPassword(''); void loadMe(); } else setError(r.status === 429 ? w.locked : w.badLogin);
+  };
+  const upload = async (file: File) => {
+    setImporting(true); setToast('');
+    try { const r = await fetch('/api/admin/directory/import', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file }); const body = await r.json(); setToast(r.ok ? w.imported(body.imported) : body.error || 'Upload failed'); if (r.ok) setTimeout(() => location.reload(), 900); }
+    catch { setToast('Upload failed'); } finally { setImporting(false); if (fileInput.current) fileInput.current.value = ''; }
+  };
+  const startImport = () => fileInput.current?.click();
+  if (me === null) return <div className="loading">…</div>;
+  if (me === false) return <main className="login-page"><form className="card login" onSubmit={login}>
+    <img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.style.display = 'none'; }} /><h1>{w.product}</h1>
+    <input autoFocus autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} placeholder={w.username} aria-label={w.username} />
+    <input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder={w.password} aria-label={w.password} />
+    <button className="btn primary">{w.signIn}</button>{error && <p className="error" role="alert">{error}</p>}
+    <button type="button" className="link" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{w.language}</button></form></main>;
+  const tab = (page: Route['page'], match: Route['page'][], href: string, label: string) => <a className={`chip${match.includes(where.page) ? ' on' : ''}`} href={href} aria-current={page === where.page ? 'page' : undefined}>{label}</a>;
   return <div className="app">
     <header className="topbar">
-      <a className="brand" href="#/" aria-label={w.dashboard}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.replaceWith(Object.assign(document.createElement('b'), { textContent: 'ZOOD' })); }} /><span><b>{w.product}</b><small>{todayLong(lang)}</small></span></a>
+      <a className="brand" href="#/" aria-label={w.company}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.replaceWith(Object.assign(document.createElement('b'), { textContent: 'ZOOD' })); }} /><span><b>{w.product}</b><small>{todayLong(lang)}</small></span></a>
       <Search lang={lang} />
       <div className="top-actions">
-        {where.page !== 'events' && <RangePicker lang={lang} range={range} onChange={setRange} />}
-        <a className={`chip${where.page === 'dashboard' ? ' on' : ''}`} href="#/">{w.dashboard}</a>
-        <a className={`chip${where.page === 'events' ? ' on' : ''}`} href="#/events">{w.events}</a>
         <button className="chip" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{w.language}</button>
-        <button className="icon-btn" aria-label={w.signOut} title={w.signOut} onClick={async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3H4v18h6v-2H6V5h4Zm6 4-1.4 1.4 2.6 2.6H9v2h8.2l-2.6 2.6L16 17l5-5Z" /></svg></button>
+        <div className="user"><span className="avatar sm">{initials(me.displayName)}</span><span><b>{me.displayName}</b><small>{me.role === 'admin' ? w.admin : w.hr}</small></span>
+          <button className="icon-btn" aria-label={w.signOut} title={w.signOut} onClick={async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3H4v18h6v-2H6V5h4Zm6 4-1.4 1.4 2.6 2.6H9v2h8.2l-2.6 2.6L16 17l5-5Z" /></svg></button></div>
       </div>
     </header>
-    {where.page === 'dashboard' && <Dashboard lang={lang} range={range} />}
-    {where.page === 'employee' && <Employee lang={lang} range={range} personKey={where.key} />}
-    {where.page === 'events' && <Ledger />}
+    <nav className="subbar" aria-label={w.product}>
+      <div className="tabs">{tab('company', ['company'], '#/', w.company)}{tab('departments', ['departments', 'department'], '#/departments', w.departments)}{tab('employees', ['employees', 'employee'], '#/employees', w.employees)}{me.role === 'admin' && tab('events', ['events'], '#/events', w.events)}</div>
+      {where.page !== 'events' && <RangePicker lang={lang} range={range} onChange={setRange} />}
+    </nav>
+    <input ref={fileInput} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void upload(f); }} />
+    {(importing || toast) && <div className="toast" role="status">{importing ? w.importing : toast}</div>}
+    {where.page === 'company' && <Company lang={lang} range={range} me={me} onImport={startImport} />}
+    {where.page === 'departments' && <Departments lang={lang} range={range} />}
+    {where.page === 'department' && <Department lang={lang} range={range} name={where.name} />}
+    {where.page === 'employees' && <Employees lang={lang} range={range} me={me} onImport={startImport} />}
+    {where.page === 'employee' && <Employee lang={lang} range={range} id={where.id} />}
+    {where.page === 'events' && me.role === 'admin' && <Ledger />}
   </div>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

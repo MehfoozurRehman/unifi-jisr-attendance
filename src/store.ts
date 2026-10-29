@@ -30,6 +30,7 @@ export class Store {
       PRAGMA user_version=1;`);
     // Added for team views; existing databases get the columns on first start.
     for (const column of ['department TEXT', 'managerEmail TEXT']) { try { this.db.exec(`ALTER TABLE employees ADD COLUMN ${column}`); } catch { /* already present */ } }
+    for (const column of ['username TEXT', 'role TEXT']) { try { this.db.exec(`ALTER TABLE sessions ADD COLUMN ${column}`); } catch { /* already present */ } }
   }
   transaction<T>(fn: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
@@ -116,8 +117,12 @@ export class Store {
     this.db.prepare("UPDATE events SET email=?,employeeId=?,employeeCode=?,employeeName=?,reason=?,updatedAt=? WHERE id=? AND status='held'").run(employee.email, employee.id, employee.code, employee.name, 'Email supplied manually; queued for processing', Date.now(), eventId);
   }
   retry(id: number, now: number) { this.db.prepare("UPDATE events SET status='queued',reason='Manually approved for retry',nextAttemptAt=?,updatedAt=? WHERE id=? AND status IN ('held','failed') AND punchId IS NULL").run(now, now, id); }
-  session(token: string, expiresAt: number) { this.db.prepare('INSERT INTO sessions(token,expiresAt) VALUES(?,?)').run(token, expiresAt); }
-  validSession(token: string, now: number) { this.db.prepare('DELETE FROM sessions WHERE expiresAt<?').run(now); return Boolean(this.db.prepare('SELECT 1 FROM sessions WHERE token=? AND expiresAt>=?').get(token, now)); }
+  session(token: string, expiresAt: number, username = 'admin', role = 'admin') { this.db.prepare('INSERT INTO sessions(token,expiresAt,username,role) VALUES(?,?,?,?)').run(token, expiresAt, username, role); }
+  validSession(token: string, now: number) { return Boolean(this.sessionUser(token, now)); }
+  sessionUser(token: string, now: number): { username: string; role: string } | null {
+    this.db.prepare('DELETE FROM sessions WHERE expiresAt<?').run(now);
+    return (this.db.prepare('SELECT coalesce(username, \'admin\') AS username, coalesce(role, \'admin\') AS role FROM sessions WHERE token=? AND expiresAt>=?').get(token, now) as { username: string; role: string } | undefined) ?? null;
+  }
   deleteSession(token: string) { this.db.prepare('DELETE FROM sessions WHERE token=?').run(token); }
   close() { this.db.close(); }
 }

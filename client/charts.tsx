@@ -7,9 +7,11 @@ const RAMP = ['#615248', '#86705f', '#ac917e', '#d1b4a2', '#efdccf'];
 const EMPTY = '#1f2740';
 export const rampColor = (value: number, max: number) => value <= 0 || max <= 0 ? EMPTY : RAMP[Math.min(RAMP.length - 1, Math.floor((value / max) * RAMP.length))];
 
-export type DailyPoint = { date: string; workday: boolean; tracked: boolean; present: number; onTime: number; late: number; absent: number; minutes: number; averageMinutes: number };
+// Time spent outside during the day: a categorical blue, validated against the status steps on the dark panel.
+export const OUTSIDE = '#3987e5';
+export type DailyPoint = { date: string; workday: boolean; tracked: boolean; present: number; onTime: number; late: number; absent: number; minutes: number; averageMinutes: number; outsideMinutes: number; breaks: number };
 export type Tap = { at: number; direction: 'in' | 'out' };
-export type Day = { date: string; weekday: number; workday: boolean; status: string; firstIn: number | null; lastOut: number | null; minutes: number; late: boolean; short: boolean; missingOut: boolean; missingIn: boolean; inside: boolean; taps: Tap[] };
+export type Day = { date: string; weekday: number; workday: boolean; status: string; firstIn: number | null; lastOut: number | null; minutes: number; late: boolean; short: boolean; missingOut: boolean; missingIn: boolean; inside: boolean; taps: Tap[]; breaks: number; outsideMinutes: number; lateMinutes: number; overtimeMinutes: number };
 
 /* ---------- tooltip ---------- */
 type TipState = { x: number; y: number; content: React.ReactNode } | null;
@@ -128,7 +130,7 @@ const statusColor = (s: string) => s === 'green' ? STATUS.good : s === 'yellow' 
 export function DailyHours({ lang, days, required }: { lang: Lang; days: Day[]; required: number }) {
   const w = t(lang), { tip, show, hide } = useTip();
   const W = 760, H = 220, pad = { l: 34, r: 8, t: 10, b: 26 };
-  const max = Math.max(required * 1.25, ...days.map(d => d.minutes));
+  const max = Math.max(required * 1.25, ...days.map(d => d.minutes + d.outsideMinutes));
   const step = (W - pad.l - pad.r) / Math.max(days.length, 1), bar = Math.max(2, Math.min(22, step - 2));
   const y = (m: number) => pad.t + (H - pad.t - pad.b) * (1 - m / max);
   const labelEvery = Math.ceil(days.length / 8);
@@ -141,17 +143,18 @@ export function DailyHours({ lang, days, required }: { lang: Lang; days: Day[]; 
         <rect className="hit" x={pad.l + i * step} y={pad.t} width={step} height={H - pad.t - pad.b} />
         {d.status === 'red' && !d.taps.length && <rect x={x} y={H - pad.b - 3} width={bar} height={3} rx={1.5} fill={STATUS.critical} />}
         {d.minutes > 0 && <rect x={x} y={y(d.minutes)} width={bar} height={H - pad.b - y(d.minutes)} rx={Math.min(4, bar / 2)} fill={statusColor(d.status)} />}
+        {d.outsideMinutes > 0 && <rect x={x} y={y(d.minutes + d.outsideMinutes)} width={bar} height={Math.max(1, y(d.minutes) - y(d.minutes + d.outsideMinutes) - 2)} rx={Math.min(4, bar / 2)} fill={OUTSIDE} />}
         {i % labelEvery === 0 && <text className="axis" x={x + bar / 2} y={H - 8} textAnchor="middle">{shortDate(lang, d.date)}</text>}
       </g>; })}
     </svg>
-    <Legend items={[[STATUS.good, w.onTime], [STATUS.warning, w.late], [STATUS.critical, w.absent], [RAMP[3], w.today]]} />
+    <Legend items={[[STATUS.good, w.onTime], [STATUS.warning, w.late], [STATUS.critical, w.absent], [RAMP[3], w.today], [OUTSIDE, w.outside]]} />
     <Tip tip={tip} />
   </div>;
 }
 export function DayTip({ lang, day }: { lang: Lang; day: Day }) {
   const w = t(lang);
   const label = day.status === 'green' ? w.onTime : day.status === 'yellow' ? w.late : day.status === 'red' ? w.absent : day.status === 'off' ? w.weekend : day.status === 'untracked' ? w.beforeRecording : w.today;
-  return <><strong>{longDate(lang, day.date)}</strong><Row color={statusColor(day.status) === 'transparent' ? undefined : statusColor(day.status)} label={w.status} value={label} /><Row label={w.worked} value={duration(lang, day.minutes)} /><Row label={w.firstIn} value={clock(lang, day.firstIn)} /><Row label={w.lastOut} value={day.inside ? w.inside : clock(lang, day.lastOut)} />{day.missingIn && <span className="muted">{w.exitNoEntry}</span>}{day.missingOut && <span className="muted">{w.noExit}</span>}</>;
+  return <><strong>{longDate(lang, day.date)}</strong><Row color={statusColor(day.status) === 'transparent' ? undefined : statusColor(day.status)} label={w.status} value={label} /><Row label={w.insideTime} value={duration(lang, day.minutes)} />{day.outsideMinutes > 0 && <Row color={OUTSIDE} label={`${w.outside} · ${day.breaks} ${w.breaks}`} value={duration(lang, day.outsideMinutes)} />}<Row label={w.firstIn} value={clock(lang, day.firstIn)} /><Row label={w.lastOut} value={day.inside ? w.inside : clock(lang, day.lastOut)} />{day.missingIn && <span className="muted">{w.exitNoEntry}</span>}{day.missingOut && <span className="muted">{w.noExit}</span>}</>;
 }
 
 /* ---------- arrival times per day (employee) ---------- */
@@ -214,4 +217,19 @@ export function DoorList({ lang, doors }: { lang: Lang; doors: { door: string; c
 export function Ring({ value, total, size = 120 }: { value: number; total: number; size?: number }) {
   const r = 46, c = 2 * Math.PI * r, share = total ? value / total : 0;
   return <svg viewBox="0 0 108 108" width={size} height={size} className="ring" aria-hidden="true"><circle cx="54" cy="54" r={r} className="track" /><circle cx="54" cy="54" r={r} className="arc" strokeDasharray={`${share * c} ${c}`} transform="rotate(-90 54 54)" /></svg>;
+}
+
+/* ---------- ranked horizontal bars (departments, leaderboards) ---------- */
+export type RankItem = { key: string; label: string; sub?: string; value: number; display: string; badge?: string; onClick?: () => void };
+export function RankBars({ items, max, tone = 'sand', empty }: { items: RankItem[]; max?: number; tone?: 'sand' | 'good' | 'warning' | 'outside'; empty: string }) {
+  const top = max ?? Math.max(1e-9, ...items.map(i => i.value));
+  const fill = tone === 'good' ? STATUS.good : tone === 'warning' ? STATUS.warning : tone === 'outside' ? OUTSIDE : RAMP[3];
+  return <ol className="rank">{items.map((item, i) => <li key={item.key}>
+    <button type="button" onClick={item.onClick} disabled={!item.onClick}>
+      <span className="rank-n">{i + 1}</span>
+      <span className="rank-label"><b>{item.label}</b>{item.sub && <small>{item.sub}</small>}</span>
+      <span className="rank-bar"><i style={{ inlineSize: `${Math.max(2, (item.value / top) * 100)}%`, background: fill }} /></span>
+      <strong>{item.display}</strong>
+    </button>
+  </li>)}{!items.length && <li className="muted">{empty}</li>}</ol>;
 }

@@ -3,6 +3,7 @@
 // Never point this at the real ledger.
 import { config } from '../src/config.js';
 import { Store } from '../src/store.js';
+import { saveDirectory } from '../src/directory.js';
 
 const [path, peopleArg = '36', daysArg = '150'] = process.argv.slice(2);
 if (!path || /attendance\.sqlite$/.test(path) && !/demo/i.test(path)) { console.error('Give a demo database path (must contain "demo")'); process.exit(2); }
@@ -36,5 +37,13 @@ for (let p = 0; p < people; p++) {
     }
   }
 }
+// A fictional employee list so department and function views have structure.
+const orgs: [string, string, string][] = [['Executive', 'الإدارة التنفيذية', 'Executive Office'], ['Finance', 'قطاع المالية', 'Treasury'], ['Finance', 'قطاع المالية', 'Accounting'], ['Development', 'قطاع التطوير', 'Projects'], ['Development', 'قطاع التطوير', 'Design'], ['Shared Services', 'الخدمات المشتركة', 'IT'], ['Shared Services', 'الخدمات المشتركة', 'HR']];
+const titles = ['Manager', 'Senior Specialist', 'Specialist', 'Analyst', 'Coordinator'];
+saveDirectory(store, Array.from({ length: people }, (_, p) => {
+  const [fn, , department] = orgs[p % orgs.length];
+  const name = `${names[p % names.length]}${p >= names.length ? ` ${Math.floor(p / names.length) + 1}` : ''}`;
+  return { employeeId: `DEMO-${String(p + 1).padStart(3, '0')}`, jisrId: null, nameAr: null, nameEn: name, titleAr: null, titleEn: titles[p % titles.length], function: fn, department, email: `demo${String(p + 1).padStart(2, '0')}@example.com`, officeNumber: String(2000 + p), officeType: p % 3 ? 'WS' : 'OFFICE', active: true };
+}), [...new Map(orgs.map(([en, ar]) => [en, { nameEn: en, nameAr: ar }])).values()], Date.now());
 store.close();
 console.log(`demo: ${people} fictional people, ${count} taps over ${days} days -> ${path}`);

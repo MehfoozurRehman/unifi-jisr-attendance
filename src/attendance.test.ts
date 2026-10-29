@@ -55,13 +55,13 @@ describe('attendance day rules', () => {
     const day = month.find(d => d.date === '2026-10-28')!;
     expect(month).toHaveLength(31); expect(day.taps).toHaveLength(2); expect(day.status).toBe('green');
     expect(new Attendance(s, rules).people().map(p => p.email)).toEqual(['exact@example.com']);
-    const range = analyze(new Attendance(s, rules), rules, '2026-10-26', '2026-10-31', null, later);
+    const range = analyze(s, new Attendance(s, rules), rules, '2026-10-26', '2026-10-31', {}, later);
     const point = range.daily.find(d => d.date === '2026-10-28')!;
     expect(point.present).toBe(1); expect(point.onTime).toBe(1); expect(point.minutes).toBe(490);
-    expect(range.kpis.medianArrival).toBe(8 * 60 + 55); expect(range.doors[0]).toEqual({ door: 'Door', count: 2 });
+    expect(range.kpis.medianArrival).toBeNull(); expect(range.kpis.medianDeparture).toBe(17 * 60 + 5); // first recorded day: arrival unknown expect(range.doors[0]).toEqual({ door: 'Door', count: 2 });
     expect(range.weekHours[3][8]).toBe(1); expect(range.weekHours[3][17]).toBe(1); expect(range.weekHours[3][18]).toBe(0);
     expect(range.daily.find(d => d.date === '2026-10-29')!.absent).toBe(1);
-    const grid = contributions(new Attendance(s, rules), rules, '2026-10-31', 'exact@example.com', later);
+    const grid = contributions(s, new Attendance(s, rules), rules, '2026-10-31', { person: 'exact@example.com' }, later);
     expect(grid.days).toHaveLength(53 * 7); expect(grid.days.at(-1)!.date).toBe('2026-10-31');
     s.close();
   });
