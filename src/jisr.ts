@@ -42,7 +42,10 @@ export class JisrClient implements JisrGateway {
       const rows = body?.data?.employees ?? [];
       for (const row of rows) {
         const id = text(row.id ?? row.uuid), code = text(row.code ?? row.employee_code ?? row.emp_code), name = text(row.full_name_en ?? row.name ?? row.full_name ?? row.name_en);
-        if (id && code && name) employees.push({ id, code, name, email: text(row.email ?? row.work_email).trim() || null, active: row.is_active !== false && row.active !== false && row.status !== 'inactive' });
+        // Department and manager field names are not confirmed against the live Jisr API yet; several common shapes are accepted.
+        const department = text(row.department?.name_en ?? row.department?.name ?? row.department_name ?? row.department).trim() || null;
+        const managerEmail = text(row.line_manager?.email ?? row.manager?.email ?? row.manager_email ?? row.line_manager_email ?? row.direct_manager?.email).trim() || null;
+        if (id && code && name) employees.push({ id, code, name, email: text(row.email ?? row.work_email).trim() || null, active: row.is_active !== false && row.active !== false && row.status !== 'inactive', department, managerEmail });
       }
       if (!body?.data?.pagination?.next_page && rows.length < 100) break;
     }
