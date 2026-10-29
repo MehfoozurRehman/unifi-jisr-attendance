@@ -5,6 +5,9 @@ import { Hono } from 'hono';
 import type { Config } from './config.js';
 import { Store } from './store.js';
 import { Worker } from './worker.js';
+import { Attendance } from './attendance.js';
+
+const rules = (config: Config) => ({ workStartMinutes: config.WORK_START_MINUTES, lateGraceMinutes: config.LATE_GRACE_MINUTES, requiredMinutes: config.REQUIRED_MINUTES, weekendDays: config.WEEKEND_DAYS });
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
 const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
@@ -41,6 +44,15 @@ export function createApp(store: Store, worker: Worker, config: Config, publicDi
   app.post('/api/admin/map', async c => { const body = await c.req.json(); try { store.map(Number(body.eventId), String(body.employeeId)); return c.json({ ok: true }); } catch (error) { return c.json({ error: String(error) }, 400); } });
   app.post('/api/admin/events/:id/retry', c => { store.retry(Number(c.req.param('id')), Date.now()); void worker.tick(); return c.json({ ok: true }); });
   app.post('/api/admin/pause', async c => { const body = await c.req.json(); store.set('paused', String(Boolean(body.paused))); return c.json({ ok: true }); });
+  const attendance = new Attendance(store, config);
+  const period = (value: string | undefined, fallback: number, min: number, max: number) => { const n = Number(value); return Number.isInteger(n) && n >= min && n <= max ? n : fallback; };
+  const nowParts = () => { const [y, m] = new Intl.DateTimeFormat('en-CA', { timeZone: config.TIMEZONE, year: 'numeric', month: '2-digit' }).format(new Date()).split('-').map(Number); return { y, m }; };
+  app.get('/api/admin/people', c => c.json(attendance.people(c.req.query('q') || '')));
+  app.get('/api/admin/attendance/month', c => { const { y, m } = nowParts(); const key = (c.req.query('person') || '').toLowerCase(); if (!key) return c.json({ error: 'person is required' }, 400); return c.json({ days: attendance.month(key, period(c.req.query('year'), y, 2020, 2100), period(c.req.query('month'), m, 1, 12)), rules: rules(config) }); });
+  app.get('/api/admin/attendance/year', c => { const { y } = nowParts(); const key = (c.req.query('person') || '').toLowerCase(); if (!key) return c.json({ error: 'person is required' }, 400); return c.json({ months: attendance.year(key, period(c.req.query('year'), y, 2020, 2100)), rules: rules(config) }); });
+  app.get('/api/admin/attendance/team', c => { const { y, m } = nowParts(); return c.json({ rows: attendance.team(period(c.req.query('year'), y, 2020, 2100), period(c.req.query('month'), m, 1, 12)), rules: rules(config) }); });
+  // Brand files (logo, licensed fonts) live outside the repository in ./brand and are optional.
+  app.get('/brand/*', c => { try { const root = resolve(join(process.cwd(), 'brand')); const path = resolve(root, `.${c.req.path.slice('/brand'.length)}`); if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) return c.notFound(); return new Response(readFileSync(path), { headers: { 'Content-Type': path.endsWith('.png') ? 'image/png' : path.endsWith('.svg') ? 'image/svg+xml' : path.endsWith('.ttf') ? 'font/ttf' : path.endsWith('.woff2') ? 'font/woff2' : 'application/octet-stream', 'Cache-Control': 'public, max-age=86400' } }); } catch { return c.notFound(); } });
   app.get('/assets/*', c => { try { const root = resolve(publicDir); const path = resolve(root, `.${c.req.path}`); if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) return c.notFound(); const content = readFileSync(path); return new Response(content, { headers: { 'Content-Type': path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : 'application/octet-stream', 'Cache-Control': 'public, max-age=31536000, immutable' } }); } catch { return c.notFound(); } });
   app.get('*', c => { try { return c.html(readFileSync(join(publicDir, 'index.html'), 'utf8')); } catch { return c.text('Dashboard build missing', 503); } });
   return app;
