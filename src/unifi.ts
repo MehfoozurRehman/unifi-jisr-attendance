@@ -1,9 +1,13 @@
+import { Agent } from 'undici';
 import type { Config } from './config.js';
 import type { UnifiDirectory } from './domain.js';
 
 export class UnifiClient implements UnifiDirectory {
   private readonly cache = new Map<string, string | null>();
-  constructor(private readonly config: Config) {}
+  private readonly dispatcher: Agent | undefined;
+  constructor(private readonly config: Config) {
+    this.dispatcher = config.UNIFI_IGNORE_SSL ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined;
+  }
   async emailForUser(userId: string): Promise<string | null> {
     if (this.cache.has(userId)) return this.cache.get(userId) ?? null;
     const base = this.config.UNIFI_BASE_URL.replace(/\/$/, ''), host = base.replace(/:\d+$/, '');
@@ -22,7 +26,7 @@ export class UnifiClient implements UnifiDirectory {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.config.REQUEST_TIMEOUT_MS);
         try {
-          const response = await fetch(url, { headers, signal: controller.signal });
+          const response = await fetch(url, { headers, signal: controller.signal, ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}) } as RequestInit);
         if (!response.ok) {
           lastError = `${response.status} ${response.statusText}`;
           continue;
