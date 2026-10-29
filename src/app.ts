@@ -6,6 +6,7 @@ import type { Config } from './config.js';
 import { Store } from './store.js';
 import { Worker } from './worker.js';
 import { Attendance } from './attendance.js';
+import { analyze, contributions } from './analytics.js';
 
 const rules = (config: Config) => ({ workStartMinutes: config.WORK_START_MINUTES, lateGraceMinutes: config.LATE_GRACE_MINUTES, requiredMinutes: config.REQUIRED_MINUTES, weekendDays: config.WEEKEND_DAYS });
 
@@ -51,6 +52,20 @@ export function createApp(store: Store, worker: Worker, config: Config, publicDi
   app.get('/api/admin/attendance/month', c => { const { y, m } = nowParts(); const key = (c.req.query('person') || '').toLowerCase(); if (!key) return c.json({ error: 'person is required' }, 400); return c.json({ days: attendance.month(key, period(c.req.query('year'), y, 2020, 2100), period(c.req.query('month'), m, 1, 12)), rules: rules(config) }); });
   app.get('/api/admin/attendance/year', c => { const { y } = nowParts(); const key = (c.req.query('person') || '').toLowerCase(); if (!key) return c.json({ error: 'person is required' }, 400); return c.json({ months: attendance.year(key, period(c.req.query('year'), y, 2020, 2100)), rules: rules(config) }); });
   app.get('/api/admin/attendance/team', c => { const { y, m } = nowParts(); return c.json({ rows: attendance.team(period(c.req.query('year'), y, 2020, 2100), period(c.req.query('month'), m, 1, 12)), rules: rules(config) }); });
+  // Range analytics: from/to are Riyadh calendar dates (YYYY-MM-DD), inclusive, at most ~13 months apart.
+  const range = (c: any) => {
+    const valid = (v: string | undefined) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: config.TIMEZONE }).format(new Date());
+    const to = valid(c.req.query('to')) ? c.req.query('to') : today;
+    const fallback = new Date(Date.parse(`${to}T12:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);
+    let from = valid(c.req.query('from')) ? c.req.query('from') : fallback;
+    if (from > to) from = to;
+    if (Date.parse(to) - Date.parse(from) > 400 * 86_400_000) from = new Date(Date.parse(`${to}T12:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10);
+    return { from: from as string, to: to as string };
+  };
+  app.get('/api/admin/analytics', c => { const { from, to } = range(c); return c.json({ ...analyze(attendance, config, from, to, null), rules: rules(config) }); });
+  app.get('/api/admin/analytics/person', c => { const key = (c.req.query('person') || '').toLowerCase(); if (!key) return c.json({ error: 'person is required' }, 400); const { from, to } = range(c); return c.json({ ...analyze(attendance, config, from, to, key), rules: rules(config) }); });
+  app.get('/api/admin/contributions', c => { const key = (c.req.query('person') || '').toLowerCase() || null; const { to } = range(c); return c.json(contributions(attendance, config, to, key)); });
   // Brand files (logo, licensed fonts) live outside the repository in ./brand and are optional.
   app.get('/brand/*', c => { try { const root = resolve(join(process.cwd(), 'brand')); const path = resolve(root, `.${c.req.path.slice('/brand'.length)}`); if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) return c.notFound(); return new Response(readFileSync(path), { headers: { 'Content-Type': path.endsWith('.png') ? 'image/png' : path.endsWith('.svg') ? 'image/svg+xml' : path.endsWith('.ttf') ? 'font/ttf' : path.endsWith('.woff2') ? 'font/woff2' : 'application/octet-stream', 'Cache-Control': 'public, max-age=86400' } }); } catch { return c.notFound(); } });
   app.get('/assets/*', c => { try { const root = resolve(publicDir); const path = resolve(root, `.${c.req.path}`); if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) return c.notFound(); const content = readFileSync(path); return new Response(content, { headers: { 'Content-Type': path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : 'application/octet-stream', 'Cache-Control': 'public, max-age=31536000, immutable' } }); } catch { return c.notFound(); } });

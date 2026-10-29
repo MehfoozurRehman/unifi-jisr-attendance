@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { config } from './config.js';
 import { Attendance, summarizeDay, type Tap } from './attendance.js';
 import { Store } from './store.js';
+import { analyze, contributions } from './analytics.js';
 
 const at = (date: string, time: string) => Date.parse(`${date}T${time}:00+03:00`);
 const tap = (date: string, time: string, direction: 'in' | 'out'): Tap => ({ at: at(date, time), direction });
@@ -32,6 +33,10 @@ describe('attendance day rules', () => {
     const day = summarizeDay('2026-10-28', [tap('2026-10-28', '11:59', 'out'), tap('2026-10-28', '13:28', 'in')], rules, now);
     expect(day.missingIn).toBe(true); expect(day.late).toBe(false); expect(day.lastOut).toBeNull(); expect(day.inside).toBe(true); expect(day.status).toBe('yellow');
   });
+  it('does not judge lateness on the day recording started', () => {
+    const day = summarizeDay('2026-10-28', [tap('2026-10-28', '11:53', 'in'), tap('2026-10-28', '12:30', 'out')], rules, later, '2026-10-28');
+    expect(day.late).toBe(false); expect(day.short).toBe(false); expect(day.status).toBe('green');
+  });
   it('does not mark days before recording started as absent', () => {
     expect(summarizeDay('2026-10-20', [], rules, later, '2026-10-28').status).toBe('untracked');
     expect(summarizeDay('2026-10-29', [], rules, later, '2026-10-28').status).toBe('red');
@@ -50,6 +55,14 @@ describe('attendance day rules', () => {
     const day = month.find(d => d.date === '2026-10-28')!;
     expect(month).toHaveLength(31); expect(day.taps).toHaveLength(2); expect(day.status).toBe('green');
     expect(new Attendance(s, rules).people().map(p => p.email)).toEqual(['exact@example.com']);
+    const range = analyze(new Attendance(s, rules), rules, '2026-10-26', '2026-10-31', null, later);
+    const point = range.daily.find(d => d.date === '2026-10-28')!;
+    expect(point.present).toBe(1); expect(point.onTime).toBe(1); expect(point.minutes).toBe(490);
+    expect(range.kpis.medianArrival).toBe(8 * 60 + 55); expect(range.doors[0]).toEqual({ door: 'Door', count: 2 });
+    expect(range.weekHours[3][8]).toBe(1); expect(range.weekHours[3][17]).toBe(1); expect(range.weekHours[3][18]).toBe(0);
+    expect(range.daily.find(d => d.date === '2026-10-29')!.absent).toBe(1);
+    const grid = contributions(new Attendance(s, rules), rules, '2026-10-31', 'exact@example.com', later);
+    expect(grid.days).toHaveLength(53 * 7); expect(grid.days.at(-1)!.date).toBe('2026-10-31');
     s.close();
   });
 });

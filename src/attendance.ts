@@ -10,15 +10,19 @@ export interface DaySummary {
 }
 export interface Person { key: string; name: string | null; email: string | null; userId: string | null; employeeCode: string | null; department: string | null; managerEmail: string | null }
 
-const dateParts = (instant: number, timezone: string) => {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' }).formatToParts(instant).map(p => [p.type, p.value]));
+// Building an Intl formatter is far more expensive than using one; analytics calls this tens of thousands of times.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+const formatterFor = (timezone: string) => { let f = formatters.get(timezone); if (!f) { f = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); formatters.set(timezone, f); } return f; };
+export const dateParts = (instant: number, timezone: string) => {
+  const parts: Record<string, string> = {};
+  for (const p of formatterFor(timezone).formatToParts(instant)) parts[p.type] = p.value;
   return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
 };
 export const localDate = (instant: number, timezone: string) => dateParts(instant, timezone).date;
 const weekdayOf = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();
 const daysIn = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 // Riyadh has no daylight saving, so a fixed offset is exact for day boundaries.
-const dayStart = (date: string, config: Config) => Date.parse(`${date}T00:00:00${config.TIMEZONE_OFFSET}`);
+export const dayStart = (date: string, config: Config) => Date.parse(`${date}T00:00:00${config.TIMEZONE_OFFSET}`);
 
 // Taps that prove physical presence: dated, with a direction, and not rejected as remote/admin/emergency.
 // Repeated same-direction taps are skipped for Jisr but still prove presence, so they count here.
@@ -40,15 +44,17 @@ export function summarizeDay(date: string, taps: Tap[], config: Config, now: num
   const missingOut = !isToday && open !== null;
   // If the day opens with an exit, the person arrived before any recorded entry, so lateness is unknown.
   const opensWithExit = sorted[0]?.direction === 'out';
-  const late = !opensWithExit && firstIn !== null && dateParts(firstIn, config.TIMEZONE).minutes > config.WORK_START_MINUTES + config.LATE_GRACE_MINUTES;
-  const short = !isToday && sorted.length > 0 && minutes < config.REQUIRED_MINUTES;
+  // On the day recording started, arrivals before the first recorded tap were missed, so neither lateness nor hours can be judged.
+  const partialDay = !!since && date === since;
+  const late = !partialDay && !opensWithExit && firstIn !== null && dateParts(firstIn, config.TIMEZONE).minutes > config.WORK_START_MINUTES + config.LATE_GRACE_MINUTES;
+  const short = !partialDay && !isToday && sorted.length > 0 && minutes < config.REQUIRED_MINUTES;
   let status: DayStatus;
   if (date > today) status = 'future';
   else if (!sorted.length && since && date < since) status = 'untracked';
   else if (!sorted.length) status = isToday ? 'today' : workday ? 'red' : 'off';
   else if (missingOut) status = 'red';
   else if (!workday) status = 'green';
-  else if (late || short || missingIn) status = 'yellow';
+  else if (late || short || (missingIn && !partialDay)) status = 'yellow';
   else status = isToday && inside ? 'today' : 'green';
   return { date, weekday, workday, status, firstIn, lastOut, minutes, late, short, missingOut, missingIn, inside, taps: sorted };
 }
@@ -74,10 +80,10 @@ export class Attendance {
     const needle = q.trim().toLowerCase();
     return rows.filter(r => r.email || !byEmail.has(r.userId)).filter(r => !needle || `${r.name} ${r.email} ${r.department}`.toLowerCase().includes(needle));
   }
-  private taps(key: string | null, from: number, to: number) {
+  taps(key: string | null, from: number, to: number) {
     const clause = key ? this.keyClause(key) : { sql: '1=1', params: [] as string[] };
-    return this.store.db.prepare(`SELECT coalesce(lower(email), 'u:' || userId) AS key, userId, occurredAt AS at, direction FROM events
-      WHERE ${TAP_FILTER} AND ${clause.sql} AND occurredAt>=? AND occurredAt<? ORDER BY occurredAt`).all(...clause.params, from, to) as unknown as (Tap & { key: string; userId: string | null })[];
+    return this.store.db.prepare(`SELECT coalesce(lower(email), 'u:' || userId) AS key, userId, occurredAt AS at, direction, door FROM events
+      WHERE ${TAP_FILTER} AND ${clause.sql} AND occurredAt>=? AND occurredAt<? ORDER BY occurredAt`).all(...clause.params, from, to) as unknown as (Tap & { key: string; userId: string | null; door: string | null })[];
   }
   month(key: string, year: number, month: number, now = Date.now()): DaySummary[] {
     const first = `${year}-${String(month).padStart(2, '0')}-01`, days = daysIn(year, month);
