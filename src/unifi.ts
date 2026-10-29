@@ -10,7 +10,7 @@ export class UnifiClient implements UnifiDirectory {
   }
   async emailForUser(userId: string): Promise<string | null> {
     if (this.cache.has(userId)) return this.cache.get(userId) ?? null;
-    const base = this.config.UNIFI_BASE_URL.replace(/\/$/, ''), host = base.replace(/:\d+$/, '');
+    const base = this.config.UNIFI_BASE_URL.replace(/\/$/, '');
     const urls = [...new Set([
       `${base}/proxy/access/api/v2/users`,
       `${base}/proxy/access/integration/v1/developer/users/${userId}`,

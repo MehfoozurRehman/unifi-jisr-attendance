@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Config } from './config.js';
-import type { Employee, EventRow, EventStatus, Punch } from './domain.js';
+import type { Employee, EventRow, Punch } from './domain.js';
 import { hash, normalize, normalizePersonName, splitEvents } from './normalize.js';
 
 export class Store {
@@ -85,7 +85,7 @@ export class Store {
     return matches.length === 1 ? matches[0] as unknown as Employee : null;
   }
   ready(now: number): EventRow[] {
-    return this.db.prepare("SELECT * FROM events WHERE nextAttemptAt<=? AND (status='queued' OR (status='held' AND email IS NULL AND userId IS NOT NULL AND reason LIKE 'Employee email is missing%')) ORDER BY occurredAt,id LIMIT 100").all(now) as unknown as EventRow[];
+    return this.db.prepare("SELECT * FROM events WHERE nextAttemptAt<=? AND (status='queued' OR (status='held' AND email IS NULL AND userId IS NOT NULL)) ORDER BY occurredAt,id LIMIT 100").all(now) as unknown as EventRow[];
   }
   unresolved(now: number): EventRow[] {
     return this.db.prepare("SELECT * FROM events WHERE status IN ('submitted','uncertain','failed') AND punchId IS NOT NULL AND nextAttemptAt<=? ORDER BY nextAttemptAt,id LIMIT 20").all(now) as unknown as EventRow[];
