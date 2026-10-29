@@ -6,11 +6,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "dev:server": "tsx watch --env-file=.env src/index.ts",
-    "local": "tsx --env-file=.env src/local.ts",
+    "dev:server": "tsx watch src/index.ts",
+    "local": "tsx src/local.ts",
     "build": "npm run build:client && tsc",
     "build:client": "vite build",
-    "start": "node --env-file-if-exists=.env dist/index.js",
+    "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
