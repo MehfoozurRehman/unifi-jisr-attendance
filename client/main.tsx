@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './app.css';
 import { Company, Department, Departments, Employee, Employees, Settings, go, initials, presetRange, type Me, type Member, type Preset, type Range } from './screens';
-import { t, todayLong, type Lang } from './i18n';
+import { t, type Lang } from './i18n';
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
@@ -90,7 +90,7 @@ function App() {
   const screen = { lang, range, onRange: setRange };
   return <div className="frame"><div className="app">
     <header className="topbar">
-      <a className="brand" href="#/" aria-label={w.company}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.replaceWith(Object.assign(document.createElement('b'), { textContent: 'ZOOD' })); }} /><span><small>{todayLong(lang)}</small><b>{w.product}</b></span></a>
+      <a className="brand" href="#/" aria-label={w.company}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.replaceWith(Object.assign(document.createElement('b'), { textContent: 'ZOOD' })); }} /></a>
       <nav className="tabs" aria-label={w.product}>{tab('company', ['company'], '#/', w.company)}{tab('departments', ['departments', 'department'], '#/departments', w.departments)}{tab('employees', ['employees', 'employee'], '#/employees', w.employees)}{me.role === 'admin' && tab('events', ['events'], '#/events', w.events)}{tab('settings', ['settings'], '#/settings', w.settings)}</nav>
       <Search lang={lang} />
       <div className="top-actions">
