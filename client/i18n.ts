@@ -97,8 +97,21 @@ export const t = (lang: Lang): Words => words[lang];
 
 const loc = (lang: Lang) => (lang === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : 'en-GB');
 const zone = 'Asia/Riyadh';
-export const clock = (lang: Lang, instant: number | null) => instant ? new Intl.DateTimeFormat(loc(lang), { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(instant) : '—';
-export const minuteClock = (minutes: number | null) => minutes === null ? '—' : `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+// Times are shown on a 12-hour clock: 9:10 AM, or 9:10 ص in Arabic.
+const meridiem = (lang: Lang, hour: number) => (hour % 24 < 12 ? (lang === 'ar' ? 'ص' : 'AM') : (lang === 'ar' ? 'م' : 'PM'));
+// Arabic times are isolated right-to-left so "9:10 ص" reads the same inside Arabic text, English names and LTR charts.
+const isolate = (lang: Lang, text: string) => (lang === 'ar' ? `⁧${text}⁩` : text);
+const riyadhMinutes = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+export const minuteClock = (minutes: number | null, lang: Lang = 'en') => {
+  if (minutes === null) return '—';
+  const h = Math.floor(minutes / 60) % 24, m = Math.round(minutes % 60);
+  return isolate(lang, `${h % 12 || 12}:${String(m).padStart(2, '0')} ${meridiem(lang, h)}`);
+};
+export const clock = (lang: Lang, instant: number | null) => { if (!instant) return '—'; const [h, m] = riyadhMinutes.format(instant).split(':').map(Number); return minuteClock(h * 60 + m, lang); };
+/** An hour mark for chart axes: 7 AM, 12 PM. */
+export const hourLabel = (lang: Lang, hour: number) => isolate(lang, `${hour % 12 || 12} ${meridiem(lang, hour)}`);
+/** HH:MM on a 24-hour clock, for <input type="time"> values only. */
+export const hhmm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 export const shortDate = (lang: Lang, date: string) => new Intl.DateTimeFormat(loc(lang), { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(Date.parse(`${date}T12:00:00Z`));
 export const longDate = (lang: Lang, date: string) => new Intl.DateTimeFormat(loc(lang), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(Date.parse(`${date}T12:00:00Z`));
 export const monthShort = (lang: Lang, date: string) => new Intl.DateTimeFormat(loc(lang), { month: 'short', timeZone: 'UTC' }).format(Date.parse(`${date}T12:00:00Z`));

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrivalDots, DailyAttendance, DailyHours, DayTimeline, DoorList, LiveTimer, RankBars, Rings, STATUS, OUTSIDE, TimeHistogram, WeekBoard, WorkActivity, YearGrid, type BoardCard, type DailyPoint, type Day, type LiveRow, type RankItem } from './charts';
-import { clock, duration, longDate, minuteClock, percent, shortDate, t, type Lang } from './i18n';
+import { clock, duration, hhmm, longDate, minuteClock, percent, shortDate, t, type Lang } from './i18n';
 
 /* ---------- types from the API ---------- */
 export type Member = { key: string; employeeId: string | null; name: string; nameAr: string | null; email: string | null; titleEn: string | null; titleAr: string | null; function: string | null; department: string | null; officeNumber: string | null; inDirectory: boolean };
@@ -65,7 +65,7 @@ const Card = ({ title, extra, className = '', children }: { title?: string; extr
   <section className={`card ${className}`}>{(title || extra) && <header className="card-head"><h3>{title}</h3>{extra}</header>}{children}</section>;
 const Tile = ({ value, label, tone, hint, wide }: { value: string; label: string; tone?: 'good' | 'warning' | 'critical' | 'outside'; hint?: string; wide?: boolean }) =>
   <section className={`card tile${wide ? ' wide' : ''}`}><strong>{value}</strong><span>{tone && <i style={{ background: tone === 'outside' ? OUTSIDE : STATUS[tone] }} />}{label}</span>{hint && <small>{hint}</small>}</section>;
-const rulesText = (lang: Lang, r?: Rules) => r ? t(lang).rules(minuteClock(r.workStartMinutes), r.lateGraceMinutes, duration(lang, r.requiredMinutes)) : '';
+const rulesText = (lang: Lang, r?: Rules) => r ? t(lang).rules(minuteClock(r.workStartMinutes, lang), r.lateGraceMinutes, duration(lang, r.requiredMinutes)) : '';
 const Loading = () => <div className="loading" aria-busy="true"><span /></div>;
 function Pills<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   return <div className="pills" role="tablist">{options.map(([v, l]) => <button key={v} role="tab" aria-selected={value === v} className={value === v ? 'on' : ''} onClick={() => onChange(v)}>{l}</button>)}</div>;
@@ -141,7 +141,7 @@ export function MembersTable({ lang, people }: { lang: Lang; people: Stats[] }) 
       <td><div className="who"><span className="avatar">{initials(r.member.name)}</span><span><b>{nameOf(lang, r.member)}</b><small>{titleOf(lang, r.member) || r.member.email || w.noEmail}{r.member.department ? ` · ${r.member.department}` : ''}</small></span></div></td>
       <td><div className="bar-cell"><span style={{ inlineSize: `${(r.attendanceRate ?? 0) * 100}%`, background: 'var(--sand)' }} /></div>{percent(r.attendanceRate)}</td>
       <td><div className="bar-cell"><span style={{ inlineSize: `${(r.onTimeRate ?? 0) * 100}%` }} /></div>{percent(r.onTimeRate)}</td>
-      <td>{duration(lang, r.averageMinutes)}</td><td>{duration(lang, r.averageOutside)}</td><td>{r.averageBreaks}</td><td>{minuteClock(r.medianArrival)}</td>
+      <td>{duration(lang, r.averageMinutes)}</td><td>{duration(lang, r.averageOutside)}</td><td>{r.averageBreaks}</td><td>{minuteClock(r.medianArrival, lang)}</td>
       <td>{r.today.inside ? <span className="state in"><i />{w.inside} · {clock(lang, r.today.firstIn)}</span> : r.today.firstIn ? <span className="state">{w.left} {clock(lang, r.today.lastOut)}</span> : <span className="state">{w.notIn}</span>}</td>
     </tr>)}</tbody></table>{!rows.length && <p className="muted">{w.noData}</p>}</div>;
 }
@@ -152,9 +152,9 @@ const waveCards = (lang: Lang, week: Analytics | null): BoardCard[] => {
   const w = t(lang), cards: BoardCard[] = [];
   week.daily.forEach((d, day) => {
     const a = d.waves.arrival, b = d.waves.breakOut, dep = d.waves.departure;
-    if (a.count && a.median !== null) cards.push({ day, start: a.median - 25, end: a.median + 35, title: w.arrivalWave, sub: `${minuteClock(a.median)} · ${w.peopleN(a.count)}`, tone: 'sand', avatars: a.first.map(f => f.name) });
-    if (b.count && b.median !== null) cards.push({ day, start: b.median - 15, end: b.median + 40, title: w.breakWave, sub: `${minuteClock(b.median)} · ${w.peopleN(b.count)}`, tone: 'outside' });
-    if (dep.count && dep.median !== null) cards.push({ day, start: dep.median - 30, end: dep.median + 30, title: w.departureWave, sub: `${minuteClock(dep.median)} · ${w.peopleN(dep.count)}`, tone: 'dark' });
+    if (a.count && a.median !== null) cards.push({ day, start: a.median - 25, end: a.median + 35, title: w.arrivalWave, sub: `${minuteClock(a.median, lang)} · ${w.peopleN(a.count)}`, tone: 'sand', avatars: a.first.map(f => f.name) });
+    if (b.count && b.median !== null) cards.push({ day, start: b.median - 15, end: b.median + 40, title: w.breakWave, sub: `${minuteClock(b.median, lang)} · ${w.peopleN(b.count)}`, tone: 'outside' });
+    if (dep.count && dep.median !== null) cards.push({ day, start: dep.median - 30, end: dep.median + 30, title: w.departureWave, sub: `${minuteClock(dep.median, lang)} · ${w.peopleN(dep.count)}`, tone: 'dark' });
   });
   return cards;
 };
@@ -188,7 +188,7 @@ function Overview({ lang, data, fetchedAt, grid, week, companyLevel }: { lang: L
       <Tile wide value={duration(lang, k.averageMinutes)} label={w.averageDay} hint={`${w.averageOutside} ${duration(lang, k.averageOutside)} · ${k.averageBreaks} ${w.breaks} ${w.perDay}`} />
     </div>
     <div className="stack span-3 row-2">
-      <Card title={w.weeklyActivity} extra={<span className="pill">{w.medianArrival} {minuteClock(k.medianArrival)}</span>} className="grow"><WorkActivity lang={lang} matrix={data.weekHours} /></Card>
+      <Card title={w.weeklyActivity} extra={<span className="pill">{w.medianArrival} {minuteClock(k.medianArrival, lang)}</span>} className="grow"><WorkActivity lang={lang} matrix={data.weekHours} /></Card>
       <Card title={w.doors} extra={<span className="pill">{data.doors.length}</span>}><DoorList lang={lang} doors={data.doors.slice(0, 5)} /></Card>
     </div>
     <Card title={w.weekOverview} extra={<span className="pill">{shortDate(lang, weekRange.from)} – {shortDate(lang, weekRange.to)}</span>} className="span-9"><WeekBoard lang={lang} days={weekDays} today={data.range.today} cards={waveCards(lang, week)} /></Card>
@@ -197,7 +197,7 @@ function Overview({ lang, data, fetchedAt, grid, week, companyLevel }: { lang: L
     <Card title={w.yearActivity} className="span-12"><>{grid ? <YearGrid lang={lang} days={grid.days} /> : <Loading />}</></Card>
     {/* Arrivals and departures side by side, then departments (company) or people (department) across the full width. */}
     <Card title={w.arrivals} className="span-6 chart-card"><TimeHistogram lang={lang} bins={data.arrivals} title={w.arrivals} marker={data.rules.workStartMinutes + data.rules.lateGraceMinutes} /></Card>
-    <Card title={w.departures} extra={<span className="pill">{minuteClock(k.medianDeparture)}</span>} className="span-6 chart-card"><TimeHistogram lang={lang} bins={data.departures} title={w.departures} /></Card>
+    <Card title={w.departures} extra={<span className="pill">{minuteClock(k.medianDeparture, lang)}</span>} className="span-6 chart-card"><TimeHistogram lang={lang} bins={data.departures} title={w.departures} /></Card>
     {companyLevel
       ? <Card title={w.byDepartment} className="span-12"><GroupCompare lang={lang} groups={data.departments} names={data.functionNames} link={g => deptHash(g.name)} /></Card>
       : <Card title={w.people} className="span-12"><MembersTable lang={lang} people={data.people} /></Card>}
@@ -239,7 +239,7 @@ export function Departments({ lang, range, onRange }: ScreenProps) {
       <div className="dept-stats">
         <span><b>{percent(d.onTimeRate)}</b><small>{w.onTimeRate}</small></span>
         <span><b>{duration(lang, d.averageMinutes)}</b><small>{w.averageDay}</small></span>
-        <span><b>{minuteClock(d.medianArrival)}</b><small>{w.medianArrival}</small></span>
+        <span><b>{minuteClock(d.medianArrival, lang)}</b><small>{w.medianArrival}</small></span>
       </div>
     </button>)}</div>
     {!shown.length && <p className="card muted">{w.noData}</p>}
@@ -314,13 +314,13 @@ export function Employee({ lang, range, onRange, id }: ScreenProps & { id: strin
         <p className="foot">{m.employeeId ?? ''}{m.officeNumber ? ` · ${w.office} ${m.officeNumber}` : ''}</p></section>
       <Card title={w.attendanceMix} className="span-3"><Rings center={percent(me.attendanceRate)} centerLabel={`${me.present} ${w.daysPresent}`} parts={[{ label: w.onTime, value: me.green / expected, color: STATUS.good }, { label: w.late, value: me.yellow / expected, color: STATUS.warning }, { label: w.absent, value: me.red / expected, color: STATUS.critical }]} /></Card>
       <div className="stack span-3 row-2">
-        <Card title={w.weeklyActivity} extra={<span className="pill">{w.medianArrival} {minuteClock(me.medianArrival)}</span>} className="grow"><WorkActivity lang={lang} matrix={data.weekHours} /></Card>
+        <Card title={w.weeklyActivity} extra={<span className="pill">{w.medianArrival} {minuteClock(me.medianArrival, lang)}</span>} className="grow"><WorkActivity lang={lang} matrix={data.weekHours} /></Card>
         <Card title={w.recentTaps}><ol className="taps">{taps.map(tap => <li key={tap.at} className={tap.direction}><b>{tap.direction === 'in' ? w.in : w.out}</b><span>{shortDate(lang, tap.date)}</span><strong>{clock(lang, tap.at)}</strong></li>)}{!taps.length && <li className="muted">{w.noData}</li>}</ol></Card>
       </div>
       <div className="tiles span-6 four">
         <Tile value={String(me.streak)} label={w.streak} tone="good" hint={`${w.bestStreak} ${me.bestStreak}`} />
         <Tile value={percent(me.onTimeRate)} label={w.onTimeRate} hint={rank >= 0 ? `${w.rank} ${rank + 1}/${ranked.length} ${w.inDepartment}` : undefined} />
-        <Tile value={duration(lang, me.averageMinutes)} label={w.averageDay} hint={`${w.medianArrival} ${minuteClock(me.medianArrival)}`} />
+        <Tile value={duration(lang, me.averageMinutes)} label={w.averageDay} hint={`${w.medianArrival} ${minuteClock(me.medianArrival, lang)}`} />
         <Tile value={duration(lang, me.averageOutside)} label={w.averageOutside} tone="outside" hint={`${me.averageBreaks} ${w.breaks} ${w.perDay} · ${duration(lang, me.lateMinutes)} ${w.lateMinutes}`} />
       </div>
       <Card title={w.weekOverview} extra={<span className="pill">{shortDate(lang, week.from)} – {shortDate(lang, week.to)}</span>} className="span-12"><WeekBoard lang={lang} days={weekDays} today={data.range.today} cards={sessionCards(lang, weekData?.people[0]?.days ?? [], week)} /></Card>
@@ -472,7 +472,7 @@ export function Settings({ lang }: { lang: Lang }) {
         <header className="card-head"><h3>{w.workRules}</h3></header>
         <p className="muted help">{w.rulesHelp}</p>
         <div className="fields">
-          <label><span>{w.workStart}</span><input type="time" required value={minuteClock(rules.workStartMinutes)} onChange={e => e.target.value && update({ workStartMinutes: hhmmToMinutes(e.target.value) })} /></label>
+          <label><span>{w.workStart}</span><input type="time" required value={hhmm(rules.workStartMinutes)} onChange={e => e.target.value && update({ workStartMinutes: hhmmToMinutes(e.target.value) })} /></label>
           <label><span>{w.grace}</span><div className="unit"><input type="number" min={0} max={240} step={1} required value={rules.lateGraceMinutes} onChange={e => update({ lateGraceMinutes: Number(e.target.value) })} /><em>{w.minutesUnit}</em></div></label>
           <label><span>{w.requiredTime}</span><div className="unit"><input type="number" min={1} max={16} step={0.25} required value={rules.requiredMinutes / 60} onChange={e => update({ requiredMinutes: Math.round(Number(e.target.value) * 60) })} /><em>{w.hoursUnit}</em></div></label>
         </div>
@@ -484,7 +484,7 @@ export function Settings({ lang }: { lang: Lang }) {
       </form>
       <section className="card span-4 accent-card">
         <header className="card-head"><h3>{w.preview}</h3></header>
-        <div className="live-hero static"><span><small>{w.lateAfter('')}</small><strong>{minuteClock(lateFrom)}</strong></span></div>
+        <div className="live-hero static"><span><small>{w.lateAfter('')}</small><strong>{minuteClock(lateFrom, lang)}</strong></span></div>
         <p className="foot">{rulesText(lang, rules)}</p>
       </section>
       <Holidays lang={lang} />
