@@ -195,11 +195,12 @@ function Overview({ lang, data, fetchedAt, grid, week, companyLevel }: { lang: L
     <Card title={w.dailyAttendance} className="span-8 chart-card"><DailyAttendance lang={lang} data={data.daily} /></Card>
     <Card title={w.leaders} className="span-4"><Leaderboard lang={lang} people={data.people} /></Card>
     <Card title={w.yearActivity} className="span-12"><>{grid ? <YearGrid lang={lang} days={grid.days} /> : <Loading />}</></Card>
-    {companyLevel && <Card title={w.byDepartment} className="span-6"><GroupCompare lang={lang} groups={data.departments} names={data.functionNames} link={g => deptHash(g.name)} /></Card>}
-    {/* A department shows arrivals and departures side by side, then its people across the full width. */}
-    <Card title={w.arrivals} className={`${companyLevel ? 'span-3' : 'span-6'} chart-card`}><TimeHistogram lang={lang} bins={data.arrivals} title={w.arrivals} marker={data.rules.workStartMinutes + data.rules.lateGraceMinutes} /></Card>
-    <Card title={w.departures} extra={<span className="pill">{minuteClock(k.medianDeparture)}</span>} className={`${companyLevel ? 'span-3' : 'span-6'} chart-card`}><TimeHistogram lang={lang} bins={data.departures} title={w.departures} /></Card>
-    {!companyLevel && <Card title={w.people} className="span-12"><MembersTable lang={lang} people={data.people} /></Card>}
+    {/* Arrivals and departures side by side, then departments (company) or people (department) across the full width. */}
+    <Card title={w.arrivals} className="span-6 chart-card"><TimeHistogram lang={lang} bins={data.arrivals} title={w.arrivals} marker={data.rules.workStartMinutes + data.rules.lateGraceMinutes} /></Card>
+    <Card title={w.departures} extra={<span className="pill">{minuteClock(k.medianDeparture)}</span>} className="span-6 chart-card"><TimeHistogram lang={lang} bins={data.departures} title={w.departures} /></Card>
+    {companyLevel
+      ? <Card title={w.byDepartment} className="span-12"><GroupCompare lang={lang} groups={data.departments} names={data.functionNames} link={g => deptHash(g.name)} /></Card>
+      : <Card title={w.people} className="span-12"><MembersTable lang={lang} people={data.people} /></Card>}
     <p className="foot span-12">{rulesText(lang, data.rules)}</p>
   </div>;
 }
