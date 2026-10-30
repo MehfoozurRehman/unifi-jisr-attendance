@@ -4,7 +4,7 @@ import type { Store } from './store.js';
 export type DayStatus = 'green' | 'yellow' | 'red' | 'off' | 'future' | 'today' | 'untracked';
 export interface Tap { at: number; direction: 'in' | 'out' }
 export interface DaySummary {
-  date: string; weekday: number; workday: boolean; status: DayStatus;
+  date: string; weekday: number; workday: boolean; holiday: string | null; status: DayStatus;
   firstIn: number | null; lastOut: number | null; minutes: number;
   late: boolean; short: boolean; missingOut: boolean; missingIn: boolean; inside: boolean; taps: Tap[];
   /** Times the person stepped out and came back during the day, and the minutes spent outside between first in and last out. */
@@ -22,6 +22,13 @@ export const dateParts = (instant: number, timezone: string) => {
 };
 export const localDate = (instant: number, timezone: string) => dateParts(instant, timezone).date;
 const weekdayOf = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();
+/** A working day is neither a weekend day nor a company holiday. */
+export const isWorkday = (date: string, config: Config) => !config.WEEKEND_DAYS.includes(weekdayOf(date)) && !config.HOLIDAYS[date];
+/** The config for one department: company holidays plus that department's own. */
+export const forDepartment = (config: Config, department: string | null | undefined): Config => {
+  const own = department ? config.DEPARTMENT_HOLIDAYS[department] : undefined;
+  return own ? { ...config, HOLIDAYS: { ...own, ...config.HOLIDAYS } } : config;
+};
 const daysIn = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 // Riyadh has no daylight saving, so a fixed offset is exact for day boundaries.
 export const dayStart = (date: string, config: Config) => Date.parse(`${date}T00:00:00${config.TIMEZONE_OFFSET}`);
@@ -32,7 +39,7 @@ const TAP_FILTER = "direction IN ('in','out') AND occurredAt IS NOT NULL AND (st
 
 // `since` is the first day the system recorded any tap; earlier days have no evidence either way.
 export function summarizeDay(date: string, taps: Tap[], config: Config, now: number, since?: string): DaySummary {
-  const weekday = weekdayOf(date), workday = !config.WEEKEND_DAYS.includes(weekday);
+  const weekday = weekdayOf(date), workday = isWorkday(date, config), holiday = config.HOLIDAYS[date] ?? null;
   const today = localDate(now, config.TIMEZONE);
   const sorted = [...taps].sort((a, b) => a.at - b.at);
   let open: number | null = null, minutes = 0, firstIn: number | null = null, lastOut: number | null = null, missingIn = false;
@@ -57,14 +64,14 @@ export function summarizeDay(date: string, taps: Tap[], config: Config, now: num
   let status: DayStatus;
   if (date > today) status = 'future';
   else if (!sorted.length && since && date < since) status = 'untracked';
-  else if (!sorted.length) status = isToday ? 'today' : workday ? 'red' : 'off';
+  else if (!sorted.length) status = !workday ? 'off' : isToday ? 'today' : 'red';
   else if (missingOut) status = 'red';
   else if (!workday) status = 'green';
   else if (late || short || (missingIn && !partialDay)) status = 'yellow';
   else status = isToday && inside ? 'today' : 'green';
   const lateMinutes = late && firstIn !== null ? dateParts(firstIn, config.TIMEZONE).minutes - config.WORK_START_MINUTES : 0;
   const overtimeMinutes = workday && !isToday && !partialDay ? Math.max(0, minutes - config.REQUIRED_MINUTES) : 0;
-  return { date, weekday, workday, status, firstIn, lastOut, minutes, late, short, missingOut, missingIn, inside, taps: sorted, breaks, outsideMinutes, lateMinutes, overtimeMinutes };
+  return { date, weekday, workday, holiday, status, firstIn, lastOut, minutes, late, short, missingOut, missingIn, inside, taps: sorted, breaks, outsideMinutes, lateMinutes, overtimeMinutes };
 }
 
 export class Attendance {

@@ -12,7 +12,7 @@ export const rampColor = (value: number, max: number) => value <= 0 || max <= 0 
 export type Wave = { median: number | null; count: number };
 export type DailyPoint = { date: string; workday: boolean; tracked: boolean; present: number; onTime: number; late: number; absent: number; minutes: number; averageMinutes: number; outsideMinutes: number; breaks: number; waves: { arrival: Wave & { first: { name: string; at: number }[] }; breakOut: Wave; departure: Wave } };
 export type Tap = { at: number; direction: 'in' | 'out' };
-export type Day = { date: string; weekday: number; workday: boolean; status: string; firstIn: number | null; lastOut: number | null; minutes: number; late: boolean; short: boolean; missingOut: boolean; missingIn: boolean; inside: boolean; taps: Tap[]; breaks: number; outsideMinutes: number; lateMinutes: number; overtimeMinutes: number };
+export type Day = { date: string; weekday: number; workday: boolean; holiday?: string | null; status: string; firstIn: number | null; lastOut: number | null; minutes: number; late: boolean; short: boolean; missingOut: boolean; missingIn: boolean; inside: boolean; taps: Tap[]; breaks: number; outsideMinutes: number; lateMinutes: number; overtimeMinutes: number };
 
 /* ---------- sizing: every chart fills its card ---------- */
 function useSize<T extends HTMLElement>() {
@@ -233,7 +233,7 @@ export function DailyHours({ lang, days, required }: { lang: Lang; days: Day[]; 
 }
 export function DayTip({ lang, day }: { lang: Lang; day: Day }) {
   const w = t(lang);
-  const label = day.status === 'green' ? w.onTime : day.status === 'yellow' ? w.late : day.status === 'red' ? w.absent : day.status === 'off' ? w.weekend : day.status === 'untracked' ? w.beforeRecording : w.today;
+  const label = day.status === 'green' ? w.onTime : day.status === 'yellow' ? w.late : day.status === 'red' ? w.absent : day.status === 'off' ? day.holiday ?? w.weekend : day.status === 'untracked' ? w.beforeRecording : w.today;
   return <><strong>{longDate(lang, day.date)}</strong><Row color={statusColor(day.status) === 'transparent' ? undefined : statusColor(day.status)} label={w.status} value={label} /><Row label={w.insideTime} value={duration(lang, day.minutes)} />{day.outsideMinutes > 0 && <Row color={OUTSIDE} label={`${w.outside} · ${day.breaks} ${w.breaks}`} value={duration(lang, day.outsideMinutes)} />}<Row label={w.firstIn} value={clock(lang, day.firstIn)} /><Row label={w.lastOut} value={day.inside ? w.inside : clock(lang, day.lastOut)} />{day.missingIn && <span className="muted">{w.exitNoEntry}</span>}{day.missingOut && <span className="muted">{w.noExit}</span>}</>;
 }
 

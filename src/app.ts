@@ -9,7 +9,7 @@ import { Attendance } from './attendance.js';
 import { analyze, contributions, members, type Scope } from './analytics.js';
 import { authenticate, clearFailures, ensureStaff, listStaff, loginBlocked, recordFailure } from './staff.js';
 import { directory, ensureDirectory, functionNames, parseEmployeeWorkbook, saveDirectory } from './directory.js';
-import { getRules, saveRules, withRules } from './rules.js';
+import { getHolidays, getRules, saveHolidays, saveRules, withRules } from './rules.js';
 import { health } from './health.js';
 
 
@@ -83,12 +83,17 @@ export function createApp(store: Store, worker: Worker, config: Config, publicDi
   // Scope: ?person=<email or employee id> | ?department=<name> | ?function=<name>; none = whole company.
   const scopeOf = (c: any): Scope => { const v = (k: string) => (c.req.query(k) || '').trim() || undefined; const person = v('person'); return { person: person && person.includes('@') ? person.toLowerCase() : person, department: v('department'), fn: v('function') }; };
   // Work rules (start time, grace, required hours, weekend) are edited in the dashboard and apply to every view.
-  const ruled = () => { const r = getRules(store, config); return { rules: r, config: withRules(config, r) }; };
+  // So are holidays, company-wide or for chosen departments.
+  const ruled = () => { const r = getRules(store, config); return { rules: r, config: withRules(config, r, getHolidays(store)) }; };
   app.get('/api/admin/analytics', c => { const { from, to } = range(c); const { rules, config: cfg } = ruled(); return c.json({ ...analyze(store, attendance, cfg, from, to, scopeOf(c)), rules, functionNames: functionNames(store) }); });
   app.get('/api/admin/contributions', c => { const { to } = range(c); return c.json(contributions(store, attendance, ruled().config, to, scopeOf(c))); });
   app.get('/api/admin/settings/rules', c => c.json(getRules(store, config)));
   app.put('/api/admin/settings/rules', async c => {
     try { return c.json({ ok: true, rules: saveRules(store, await c.req.json()) }); } catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Invalid rules' }, 400); }
+  });
+  app.get('/api/admin/settings/holidays', c => c.json({ holidays: getHolidays(store), departments: [...new Set(directory(store).filter(e => e.active && e.department).map(e => e.department!))].sort() }));
+  app.put('/api/admin/settings/holidays', async c => {
+    try { return c.json({ ok: true, holidays: saveHolidays(store, (await c.req.json())?.holidays) }); } catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Invalid holidays' }, 400); }
   });
   // System health for the Settings page; ?refresh=1 re-runs the live Jisr and UniFi checks (otherwise cached for a minute).
   app.get('/api/admin/health', async c => c.json(await health(store, config, worker.gateway, worker.unifi, { refresh: c.req.query('refresh') === '1' })));

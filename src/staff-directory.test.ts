@@ -110,3 +110,39 @@ describe('work rules from the dashboard', () => {
     s.close();
   });
 });
+
+describe('holidays', () => {
+  it('validates and saves company and department holidays', async () => {
+    const { getHolidays, saveHolidays, validateHolidays } = await import('./rules.js');
+    const s = new Store(':memory:');
+    expect(getHolidays(s)).toEqual([]);
+    expect(() => validateHolidays([{ name: '', from: '2026-12-01' }])).toThrow(/name/);
+    expect(() => validateHolidays([{ name: 'Bad', from: '2026-02-30' }])).toThrow(/YYYY-MM-DD/);
+    expect(() => validateHolidays([{ name: 'Backwards', from: '2026-12-05', to: '2026-12-01' }])).toThrow(/before/);
+    expect(() => validateHolidays([{ name: 'Too long', from: '2026-01-01', to: '2026-03-01' }])).toThrow(/31 days/);
+    saveHolidays(s, [{ name: 'Offsite', from: '2026-11-10', departments: ['IT', 'IT', ' HR '] }, { name: 'National Day', from: '2026-09-23' }]);
+    expect(getHolidays(s)).toMatchObject([{ name: 'National Day', from: '2026-09-23', to: '2026-09-23', departments: [] }, { name: 'Offsite', to: '2026-11-10', departments: ['HR', 'IT'] }]);
+    s.close();
+  });
+  it('makes a company holiday a day off for everyone and a department holiday only for that department', async () => {
+    const { getRules, withRules } = await import('./rules.js');
+    const s = new Store(':memory:');
+    const person = (id: string, department: string) => ({ employeeId: id, jisrId: null, nameAr: null, nameEn: id, titleAr: null, titleEn: null, function: 'Ops', department, email: `${id}@example.com`, officeNumber: null, officeType: null, active: true });
+    saveDirectory(s, [person('it1', 'IT'), person('hr1', 'HR')], [], Date.now());
+    // A tap the week before, so recording had already started.
+    s.ingest(JSON.stringify({ id: 'access.unlocks.location_unlocked', device: 'r', device_name: 'Door', location_name: 'Door', user: 'u1', user_name: 'it1', user_email: 'it1@example.com', time: String(at('2026-10-20', '08:50') / 1000), direction: 'entered', credential_type: 'FACE', admin: '', emergency_mode: '' }), at('2026-10-20', '08:51'), { ...config, MAX_EVENT_AGE_MS: 1e12 });
+    const cfg = withRules(config, getRules(s, config), [
+      { id: 'a', name: 'Company day', from: '2026-10-26', to: '2026-10-26', departments: [] },
+      { id: 'b', name: 'IT offsite', from: '2026-10-27', to: '2026-10-28', departments: ['IT'] },
+    ]);
+    const att = new Attendance(s, cfg), run = (scope = {}) => analyze(s, att, cfg, '2026-10-26', '2026-10-28', scope, later);
+    const company = run();
+    // Nobody tapped: the company day is off for both, the IT offsite is off for IT only, so HR is absent twice.
+    expect(company.daily.map(d => [d.date, d.workday, d.holiday])).toEqual([['2026-10-26', false, 'Company day'], ['2026-10-27', true, null], ['2026-10-28', true, null]]);
+    expect(company.people.find(p => p.member.employeeId === 'it1')).toMatchObject({ expected: 0, red: 0 });
+    expect(company.people.find(p => p.member.employeeId === 'hr1')).toMatchObject({ expected: 2, red: 2 });
+    expect(run({ department: 'IT' }).daily.map(d => d.holiday)).toEqual(['Company day', 'IT offsite', 'IT offsite']);
+    expect(summarizeDay('2026-10-26', [], cfg, later)).toMatchObject({ workday: false, holiday: 'Company day', status: 'off' });
+    s.close();
+  });
+});

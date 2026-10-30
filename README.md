@@ -95,7 +95,7 @@ One card per department, with its function (Executive, Shared Services, Developm
 
 ### Department
 
-The same views as the Company page, limited to one team. This is the manager's view: who is in, who is late, and how the team compares over the month and the year.
+The same views as the Company page, limited to one team. This is the manager's view: who is in, who is late, and how the team compares over the month and the year. Arrival and departure times sit side by side, with the team's employee table across the full width below them.
 
 <img src="docs/screenshots/en/04-department.png" width="720" alt="Department page">
 
@@ -153,6 +153,7 @@ Every UniFi delivery and what happened to it:
   - weekend days.
 
   A live preview shows when an arrival starts to count as late. Every colour on every page follows these rules.
+- **Holidays:** see [below](#holidays).
 
 <img src="docs/screenshots/en/08-settings.png" width="720" alt="Settings page">
 
@@ -191,7 +192,27 @@ Each working day for each person gets one colour:
 | 🟡 Yellow | Late, or left before the required hours |
 | 🔴 Red | Absent, or tapped in with no tap out |
 
-The defaults are a 09:00 start, 15 minutes of grace, 8 hours a day, with Friday and Saturday off. HR changes these in **Settings → Work rules**. Time inside is the sum of each IN to the next OUT, so breaks outside the building are not counted, and they are shown separately as **time outside**. All times are in Asia/Riyadh.
+The defaults are a 09:00 start, 15 minutes of grace, 8 hours a day, with Friday and Saturday off. HR changes these in **Settings → Work rules**. Weekends and [holidays](#holidays) are days off: nobody is marked absent or late on them. Time inside is the sum of each IN to the next OUT, so breaks outside the building are not counted, and they are shown separately as **time outside**. All times are in Asia/Riyadh.
+
+---
+
+## Holidays
+
+HR and admins add days off in **Settings → Holidays**. Each holiday has:
+
+- a name, for example "National Day" or "IT offsite";
+- a first and last day; one entry can cover up to 31 days, such as Eid;
+- who it applies to: **the whole company**, or **one or more departments**.
+
+On those days, the people it applies to are not expected in. They are not marked absent or late, the days don't lower their attendance or on-time rates, and they don't break an on-time streak. Anyone who comes in anyway still has their time counted.
+
+- **Company holiday:** a day off for everyone.
+- **Department holiday:** a day off only for people in those departments; everyone else is still expected in. The department's own page and its employees' pages show the day as a day off. The company totals count it as a day off for that department only.
+- **Charts:** calendars show holidays like weekends, with the holiday's name.
+
+Upcoming and past holidays are listed side by side, and each can be removed with one click.
+
+<img src="docs/screenshots/holidays.png" width="720" alt="Holidays in Settings">
 
 ---
 
@@ -340,6 +361,7 @@ The Jisr key needs these Open API permissions: **Employees: read** and **Attenda
 | GET | `/api/admin/events`, `/api/admin/events/:id`, `/api/admin/employees` | admin | Event ledger |
 | POST | `/api/admin/map`, `/api/admin/events/:id/retry`, `/api/admin/pause` | admin | Ledger actions |
 | GET, PUT | `/api/admin/settings/rules` | staff | Work rules |
+| GET, PUT | `/api/admin/settings/holidays` | staff | Holidays, company-wide or per department |
 | GET | `/api/admin/health` (`?refresh=1`) | staff | System health |
 
 ---
@@ -358,7 +380,7 @@ src/
   jisr.ts          Jisr Open API client (employees, punches, confirmation, health probe)
   attendance.ts    green / yellow / red day rules
   analytics.ts     company, department and employee figures
-  rules.ts         work rules saved from Settings
+  rules.ts         work rules and holidays saved from Settings
   health.ts        system health checks
   directory.ts     HR Excel import
   staff.ts         accounts, passwords, sessions
@@ -381,7 +403,7 @@ docs/screenshots/      the images in this README
 npm test
 ```
 
-There are 38 tests. They cover event classification and direction, ordering, duplicates, reconciliation, UniFi email lookup, staff accounts, the employee list import, attendance colours and the health checks. They use an in-memory database and fake Jisr and UniFi clients, so they never call the real services.
+There are 40 tests. They cover event classification and direction, ordering, duplicates, reconciliation, UniFi email lookup, staff accounts, the employee list import, attendance colours, company and department holidays, and the health checks. They use an in-memory database and fake Jisr and UniFi clients, so they never call the real services.
 
 ---
 
@@ -391,7 +413,7 @@ There are 38 tests. They cover event classification and direction, ordering, dup
   - receiving UniFi events;
   - UniFi email lookup;
   - the dashboard;
-  - work rules;
+  - work rules and holidays;
   - system health.
 - **Waiting on Jisr permissions.** The current key signs in, but Jisr refuses to read employees and attendance logs (HTTP 403). Jisr IT needs to grant **Employees: read** and **Attendance logs: create and read**. Until then no punch can be sent or confirmed, and the end-to-end test can't run.
 - **UniFi data to fix.** Some active UniFi users have no email, and some badge holders are not on the HR list. System health lists both.

@@ -195,11 +195,11 @@ function Overview({ lang, data, fetchedAt, grid, week, companyLevel }: { lang: L
     <Card title={w.dailyAttendance} className="span-8 chart-card"><DailyAttendance lang={lang} data={data.daily} /></Card>
     <Card title={w.leaders} className="span-4"><Leaderboard lang={lang} people={data.people} /></Card>
     <Card title={w.yearActivity} className="span-12"><>{grid ? <YearGrid lang={lang} days={grid.days} /> : <Loading />}</></Card>
-    {companyLevel
-      ? <Card title={w.byDepartment} className="span-6"><GroupCompare lang={lang} groups={data.departments} names={data.functionNames} link={g => deptHash(g.name)} /></Card>
-      : <Card title={w.people} className="span-6"><MembersTable lang={lang} people={data.people} /></Card>}
-    <Card title={w.arrivals} className="span-3 chart-card"><TimeHistogram lang={lang} bins={data.arrivals} title={w.arrivals} marker={data.rules.workStartMinutes + data.rules.lateGraceMinutes} /></Card>
-    <Card title={w.departures} extra={<span className="pill">{minuteClock(k.medianDeparture)}</span>} className="span-3 chart-card"><TimeHistogram lang={lang} bins={data.departures} title={w.departures} /></Card>
+    {companyLevel && <Card title={w.byDepartment} className="span-6"><GroupCompare lang={lang} groups={data.departments} names={data.functionNames} link={g => deptHash(g.name)} /></Card>}
+    {/* A department shows arrivals and departures side by side, then its people across the full width. */}
+    <Card title={w.arrivals} className={`${companyLevel ? 'span-3' : 'span-6'} chart-card`}><TimeHistogram lang={lang} bins={data.arrivals} title={w.arrivals} marker={data.rules.workStartMinutes + data.rules.lateGraceMinutes} /></Card>
+    <Card title={w.departures} extra={<span className="pill">{minuteClock(k.medianDeparture)}</span>} className={`${companyLevel ? 'span-3' : 'span-6'} chart-card`}><TimeHistogram lang={lang} bins={data.departures} title={w.departures} /></Card>
+    {!companyLevel && <Card title={w.people} className="span-12"><MembersTable lang={lang} people={data.people} /></Card>}
     <p className="foot span-12">{rulesText(lang, data.rules)}</p>
   </div>;
 }
@@ -386,6 +386,68 @@ export function HealthPanel({ lang }: { lang: Lang }) {
   </section>;
 }
 
+/* ---------- settings: holidays, company-wide or per department ---------- */
+type Holiday = { id: string; name: string; from: string; to: string; departments: string[] };
+function Holidays({ lang }: { lang: Lang }) {
+  const w = t(lang), h = w.holidays;
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
+  const [list, setList] = useState<Holiday[] | null>(null); const [departments, setDepartments] = useState<string[]>([]);
+  const [draft, setDraft] = useState({ name: '', from: today, to: today, company: true, departments: [] as string[] });
+  const [status, setStatus] = useState<{ kind: 'idle' | 'saving' | 'ok' | 'error'; text?: string }>({ kind: 'idle' });
+  useEffect(() => { void get<{ holidays: Holiday[]; departments: string[] }>('/api/admin/settings/holidays').then(r => { setList(r.holidays); setDepartments(r.departments); }).catch(() => setStatus({ kind: 'error', text: w.noData })); }, []);
+  if (!list) return <section className="card span-12"><Loading /></section>;
+  const store = async (next: Omit<Holiday, 'id'>[] | Holiday[], done: string) => {
+    setStatus({ kind: 'saving' });
+    const r = await fetch('/api/admin/settings/holidays', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ holidays: next }) });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) { setList(body.holidays); setStatus({ kind: 'ok', text: done }); return true; }
+    setStatus({ kind: 'error', text: body.error || 'Error' }); return false;
+  };
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!draft.company && !draft.departments.length) { setStatus({ kind: 'error', text: h.pickDepartment }); return; }
+    const to = draft.to < draft.from ? draft.from : draft.to;
+    if (await store([...list, { name: draft.name, from: draft.from, to, departments: draft.company ? [] : draft.departments }], h.added)) setDraft({ ...draft, name: '' });
+  };
+  const fmt = (d: string) => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(Date.parse(`${d}T12:00:00Z`));
+  const length = (x: Holiday) => Math.round((Date.parse(x.to) - Date.parse(x.from)) / 86_400_000) + 1;
+  const toggle = (d: string) => setDraft({ ...draft, company: false, departments: draft.departments.includes(d) ? draft.departments.filter(x => x !== d) : [...draft.departments, d] });
+  const upcoming = list.filter(x => x.to >= today), past = list.filter(x => x.to < today).reverse();
+  const row = (x: Holiday) => <li key={x.id} className={x.to < today ? 'past' : ''}>
+    <div><b>{x.name}</b><small>{fmt(x.from)}{x.to !== x.from && <> – {fmt(x.to)}</>} · {h.days(length(x))}</small></div>
+    <div className="holiday-scope">{x.departments.length ? x.departments.map(d => <span key={d} className="chip">{d}</span>) : <span className="chip company">{h.company}</span>}</div>
+    <button type="button" className="round" aria-label={`${h.remove} ${x.name}`} title={h.remove} disabled={status.kind === 'saving'} onClick={() => void store(list.filter(y => y.id !== x.id), h.removed)}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm4 2v8h2v-8h-2Zm4 0v8h2v-8h-2Z" /></svg></button>
+  </li>;
+  return <section className="card span-12 holidays">
+    <header className="card-head"><h3>{h.title}</h3></header>
+    <p className="muted help">{h.help}</p>
+    <div className="holidays-body">
+      <form onSubmit={add} className="holiday-form">
+        <div className="fields">
+          <label><span>{h.name}</span><input required maxLength={80} value={draft.name} placeholder={h.namePlaceholder} onChange={e => { setDraft({ ...draft, name: e.target.value }); setStatus({ kind: 'idle' }); }} /></label>
+          <label><span>{h.from}</span><input type="date" required value={draft.from} onChange={e => e.target.value && setDraft({ ...draft, from: e.target.value, to: draft.to < e.target.value ? e.target.value : draft.to })} /></label>
+          <label><span>{h.to}</span><input type="date" required min={draft.from} value={draft.to} onChange={e => e.target.value && setDraft({ ...draft, to: e.target.value })} /></label>
+        </div>
+        <fieldset className="weekend"><legend>{h.appliesTo}</legend>
+          <div className="pills wrap">
+            <button type="button" className={draft.company ? 'on' : ''} aria-pressed={draft.company} onClick={() => setDraft({ ...draft, company: true, departments: [] })}>{h.company}</button>
+            {departments.map(d => { const on = !draft.company && draft.departments.includes(d); return <button type="button" key={d} className={on ? 'on' : ''} aria-pressed={on} onClick={() => toggle(d)}>{d}</button>; })}
+          </div>
+          {!departments.length && <small className="muted">{h.noDepartments}</small>}
+        </fieldset>
+        <div className="form-actions"><button className="pill-btn light" disabled={status.kind === 'saving'}>{status.kind === 'saving' ? w.saving : h.add}</button>
+          {status.text && <span className={status.kind === 'error' ? 'error' : 'ok'} role="status">{status.text}</span>}</div>
+      </form>
+      <div className="holiday-lists">
+        {!list.length && <p className="muted">{h.none}</p>}
+        {upcoming.length > 0 && <><h4>{h.upcoming}</h4><ul className="holiday-list">{upcoming.map(row)}</ul></>}
+        {past.length > 0 && <><h4>{h.past}</h4><ul className="holiday-list">{past.map(row)}</ul></>}
+      </div>
+    </div>
+  </section>;
+}
+
 /* ---------- settings: work rules (HR and admins) ---------- */
 export function Settings({ lang }: { lang: Lang }) {
   const w = t(lang);
@@ -402,7 +464,7 @@ export function Settings({ lang }: { lang: Lang }) {
   };
   const lateFrom = rules.workStartMinutes + rules.lateGraceMinutes;
   return <div className="page">
-    <div className="title-row"><div className="title"><h1>{w.settings}</h1><span>{w.health.title} · {w.workRules}</span></div><span /><span /></div>
+    <div className="title-row"><div className="title"><h1>{w.settings}</h1><span>{w.health.title} · {w.workRules} · {w.holidays.title}</span></div><span /><span /></div>
     <div className="grid">
       <HealthPanel lang={lang} />
       <form className="card span-8 settings" onSubmit={save}>
@@ -424,6 +486,7 @@ export function Settings({ lang }: { lang: Lang }) {
         <div className="live-hero static"><span><small>{w.lateAfter('')}</small><strong>{minuteClock(lateFrom)}</strong></span></div>
         <p className="foot">{rulesText(lang, rules)}</p>
       </section>
+      <Holidays lang={lang} />
     </div>
   </div>;
 }
