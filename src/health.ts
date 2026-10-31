@@ -14,6 +14,7 @@ export interface HealthReport { level: Level; checkedAt: number; liveCheckedAt: 
 const rank: Record<Level, number> = { off: 0, ok: 1, warn: 2, fail: 3 };
 const LIVE_TTL_MS = 60_000;
 const QUIET_MS = 24 * 3_600_000;
+const UNMATCHED_WINDOW_MS = 90 * 86_400_000;
 const startedAt = Date.now();
 
 type Live = { at: number; jisr?: Awaited<ReturnType<NonNullable<JisrGateway['probe']>>>; unifi?: Awaited<ReturnType<NonNullable<UnifiDirectory['probe']>>> };
@@ -40,20 +41,24 @@ export async function health(store: Store, config: Config, gateway: JisrGateway,
   const one = <T>(sql: string, ...args: (string | number)[]) => store.db.prepare(sql).get(...args) as T;
   const checks: Check[] = [];
 
-  // Jisr: sign-in and the two APIs the middleware needs, then the background employee sync.
+  // Jisr: sign-in and the two APIs the middleware needs. These do not touch the database.
   checks.push(probeCheck('jisr.auth', 'jisr', jisr?.auth, 'signedIn'));
   checks.push(probeCheck('jisr.employees', 'jisr', jisr?.employees, 'canRead'));
   checks.push(probeCheck('jisr.attendance', 'jisr', jisr?.attendance, 'canRead'));
+  // UniFi: the developer API (email lookup) and people without an email.
+  checks.push(probeCheck('unifi.api', 'unifi', u, 'reachable', { users: u?.users ?? null }));
+  if (u?.ok) checks.push(u.withoutEmail.length ? { id: 'unifi.emails', group: 'unifi', level: 'warn', code: 'missingEmails', params: { count: u.withoutEmail.length, names: u.withoutEmail.slice(0, 8) } } : { id: 'unifi.emails', group: 'unifi', level: 'ok', code: 'allHaveEmail', params: { count: u.users } });
+  else checks.push({ id: 'unifi.emails', group: 'unifi', level: 'off', code: 'skippedAfterApi' });
+
+  // Everything below reads the database. If it fails, the report still returns and says so.
+  try {
   const syncedAt = Number(setting('employeesRefreshedAt') || 0), syncError = setting('employeeError');
   const jisrEmployees = one<{ n: number }>('SELECT count(*) AS n FROM employees WHERE active=1').n;
   if (syncError && (!syncedAt || Number(setting('employeeRetryAt') || 0) > syncedAt)) checks.push({ id: 'jisr.sync', group: 'jisr', level: 'fail', code: 'syncFailing', params: { error: syncError.replace(/^\w*Error:\s*/, ''), at: syncedAt || null } });
   else if (syncedAt) checks.push({ id: 'jisr.sync', group: 'jisr', level: 'ok', code: 'synced', params: { at: syncedAt, count: jisrEmployees } });
   else checks.push({ id: 'jisr.sync', group: 'jisr', level: 'warn', code: 'neverSynced' });
 
-  // UniFi: the developer API (email lookup), people without an email, and whether webhooks are arriving.
-  checks.push(probeCheck('unifi.api', 'unifi', u, 'reachable', { users: u?.users ?? null }));
-  if (u?.ok) checks.push(u.withoutEmail.length ? { id: 'unifi.emails', group: 'unifi', level: 'warn', code: 'missingEmails', params: { count: u.withoutEmail.length, names: u.withoutEmail.slice(0, 8) } } : { id: 'unifi.emails', group: 'unifi', level: 'ok', code: 'allHaveEmail', params: { count: u.users } });
-  else checks.push({ id: 'unifi.emails', group: 'unifi', level: 'off', code: 'skippedAfterApi' });
+  // UniFi: whether webhooks are arriving.
   const lastDelivery = one<{ at: number | null }>('SELECT max(receivedAt) AS at FROM deliveries').at;
   const lastError = one<{ n: number }>('SELECT count(*) AS n FROM deliveries WHERE error IS NOT NULL AND receivedAt>?', now - QUIET_MS).n;
   if (!lastDelivery) checks.push({ id: 'unifi.webhook', group: 'unifi', level: 'warn', code: 'noEvents' });
@@ -68,17 +73,21 @@ export async function health(store: Store, config: Config, gateway: JisrGateway,
   checks.push({ id: 'system.queue', group: 'system', level: counts.failed || counts.uncertain ? 'fail' : stuck || waiting ? 'warn' : 'ok', code: stuck || waiting ? 'needsAttention' : 'clear', params: { held: counts.held ?? 0, failed: counts.failed ?? 0, uncertain: counts.uncertain ?? 0, waiting, confirmed: counts.confirmed ?? 0 } });
   let size: number | null = null;
   try { size = statSync(config.DATABASE_PATH).size; } catch { /* in-memory or not created yet */ }
-  try { one('SELECT 1'); checks.push({ id: 'system.database', group: 'system', level: 'ok', code: 'database', params: { size, events: Object.values(counts).reduce((a, b) => a + b, 0) } }); }
-  catch (error) { checks.push({ id: 'system.database', group: 'system', level: 'fail', code: 'unreachable', params: { error: String(error) } }); }
+  checks.push({ id: 'system.database', group: 'system', level: 'ok', code: 'database', params: { size, events: Object.values(counts).reduce((a, b) => a + b, 0) } });
   const memory = process.memoryUsage().rss;
   checks.push({ id: 'system.server', group: 'system', level: memory > 1_000_000_000 ? 'warn' : 'ok', code: 'server', params: { uptime: Math.round((now - startedAt) / 1000), node: process.version, memory } });
 
-  // Data: the HR employee list, and badge holders whose taps do not match anyone on it.
+  // Data: the HR employee list, and recent badge holders whose taps do not match anyone active on it.
   const listed = one<{ n: number }>('SELECT count(*) AS n FROM directory WHERE active=1').n;
   checks.push(listed ? { id: 'data.directory', group: 'data', level: 'ok', code: 'imported', params: { count: listed, at: Number(setting('directoryImportedAt') || 0) || null } } : { id: 'data.directory', group: 'data', level: 'warn', code: 'notImported' });
   if (listed) {
-    const unmatched = store.db.prepare("SELECT max(name) AS name FROM events WHERE email IS NOT NULL AND lower(email) NOT IN (SELECT lower(email) FROM directory WHERE email IS NOT NULL) GROUP BY lower(email) ORDER BY max(receivedAt) DESC").all() as { name: string | null }[];
+    const unmatched = store.db.prepare("SELECT max(name) AS name FROM events WHERE receivedAt>? AND email IS NOT NULL AND lower(email) NOT IN (SELECT lower(email) FROM directory WHERE active=1 AND email IS NOT NULL) GROUP BY lower(email) ORDER BY max(receivedAt) DESC").all(now - UNMATCHED_WINDOW_MS) as { name: string | null }[];
     checks.push(unmatched.length ? { id: 'data.unmatched', group: 'data', level: 'warn', code: 'unmatched', params: { count: unmatched.length, names: unmatched.slice(0, 8).map(r => r.name || '?') } } : { id: 'data.unmatched', group: 'data', level: 'ok', code: 'allMatched' });
+  }
+  } catch (error) {
+    const failed: Check = { id: 'system.database', group: 'system', level: 'fail', code: 'unreachable', params: { status: null, error: error instanceof Error ? error.message : String(error) } };
+    const at = checks.findIndex(c => c.id === failed.id);
+    if (at >= 0) checks[at] = failed; else checks.push(failed);
   }
   const brand = existsSync(join(process.cwd(), 'brand', 'logo-white-crop.png'));
   checks.push({ id: 'data.brand', group: 'data', level: brand ? 'ok' : 'warn', code: brand ? 'brandFound' : 'brandMissing' });

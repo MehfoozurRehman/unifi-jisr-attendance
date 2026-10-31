@@ -22,6 +22,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS event_fingerprint ON events(fingerprint);
       CREATE INDEX IF NOT EXISTS event_queue ON events(status,nextAttemptAt,occurredAt);
       CREATE INDEX IF NOT EXISTS event_employee ON events(employeeId,occurredAt);
+      CREATE INDEX IF NOT EXISTS event_received ON events(receivedAt);
       CREATE TABLE IF NOT EXISTS employees(id TEXT PRIMARY KEY, code TEXT NOT NULL, email TEXT, name TEXT NOT NULL, active INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, eventId INTEGER NOT NULL REFERENCES events(id), at INTEGER NOT NULL, kind TEXT NOT NULL, outcome TEXT NOT NULL, detail TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);

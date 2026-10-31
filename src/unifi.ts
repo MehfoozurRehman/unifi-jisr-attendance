@@ -11,6 +11,8 @@ export const pickEmail = (data: any): string => {
   return '';
 };
 
+const PROBE_PAGE_SIZE = 1000, PROBE_MAX_PAGES = 50;
+
 export class UnifiClient implements UnifiDirectory {
   private readonly cache = new Map<string, string | null>();
   private readonly dispatcher: Agent | undefined;
@@ -23,13 +25,21 @@ export class UnifiClient implements UnifiDirectory {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(`${host}:12445/api/v1/developer/users?page_num=1&page_size=1000`, { headers: { Authorization: `Bearer ${this.config.UNIFI_API_TOKEN}`, Accept: 'application/json' }, signal: controller.signal, ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}) });
-      if (!response.ok) return { ok: false, status: response.status, message: response.status === 401 || response.status === 403 ? 'notAuthorized' : 'httpError', users: null, withoutEmail: [] };
-      const body = await response.json() as any, list = Array.isArray(body?.data) ? body.data : [];
+      const list: any[] = [];
+      for (let page = 1; page <= PROBE_MAX_PAGES; page++) {
+        const response = await fetch(`${host}:12445/api/v1/developer/users?page_num=${page}&page_size=${PROBE_PAGE_SIZE}`, { headers: { Authorization: `Bearer ${this.config.UNIFI_API_TOKEN}`, Accept: 'application/json' }, signal: controller.signal, ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}) });
+        if (!response.ok) return { ok: false, status: response.status, message: response.status === 401 || response.status === 403 ? 'notAuthorized' : 'httpError', users: null, withoutEmail: [] };
+        const body = await response.json().catch(() => null) as any;
+        // A 200 without a user list is a failure, not an empty directory.
+        if (!Array.isArray(body?.data)) return { ok: false, status: response.status, message: 'invalidResponse', users: null, withoutEmail: [] };
+        list.push(...body.data);
+        const total = Number(body?.pagination?.total);
+        if (!body.data.length || (Number.isFinite(total) ? list.length >= total : body.data.length < PROBE_PAGE_SIZE)) break;
+      }
       // Only active people matter; UniFi keeps deactivated users in the list.
       const active = list.filter((u: any) => !u.status || String(u.status).toUpperCase() === 'ACTIVE');
       const withoutEmail = active.filter((u: any) => !pickEmail(u)).map((u: any) => String(u.full_name || `${u.first_name ?? ''} ${u.last_name ?? ''}`).trim() || String(u.id));
-      return { ok: true, status: response.status, message: 'ok', users: active.length, withoutEmail };
+      return { ok: true, status: 200, message: 'ok', users: active.length, withoutEmail };
     } catch (error) {
       return { ok: false, status: null, message: controller.signal.aborted ? 'timeout' : error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error), users: null, withoutEmail: [] };
     } finally { clearTimeout(timeout); }
