@@ -224,12 +224,13 @@ svg .cell.off { stroke: var(--line); }
 .ramp-legend { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-block-start: 10px; color: var(--muted); font-size: 11px; }
 .ramp-legend i { inline-size: 11px; block-size: 11px; border-radius: 3px; }
 .ramp-legend span { margin-inline: 4px; }
-.tip { position: fixed; z-index: 60; min-inline-size: 160px; max-inline-size: 250px; padding: 10px 12px; border-radius: 14px; background: #0c111d; border: 1px solid var(--line-2); box-shadow: 0 16px 36px rgba(0, 0, 0, .6); pointer-events: none; transform: translateY(-100%); font-size: 12px; display: grid; gap: 4px; }
-.tip strong { font-weight: 500; margin-block-end: 2px; }
+.tip { position: fixed; z-index: 60; min-inline-size: 168px; max-inline-size: 240px; padding: 10px 14px 11px; border-radius: 12px; background: rgba(16, 22, 36, .96); border: 1px solid rgba(224, 200, 184, .18); box-shadow: 0 12px 28px rgba(0, 0, 0, .55); pointer-events: none; transform: translate(-50%, -100%); font-size: 12px; line-height: 1.35; display: grid; gap: 6px; backdrop-filter: blur(6px); }
+.tip.below { transform: translate(-50%, 0); }
+.tip strong { font-weight: 500; color: var(--sand); padding-block-end: 6px; border-block-end: 1px solid var(--line-2); }
 .tip-row { display: flex; align-items: center; gap: 8px; }
-.tip-row i { inline-size: 12px; block-size: 3px; border-radius: 2px; }
-.tip-row b { font-weight: 700; }
-.tip-row span { color: var(--muted); }
+.tip-row i { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; }
+.tip-row span { color: var(--text-2); }
+.tip-row b { margin-inline-start: auto; padding-inline-start: 12px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* doors (concept "Apps & URLs") */
 .doors { list-style: none; margin: 0; padding: 0; display: grid; }
@@ -430,6 +431,25 @@ select option, select optgroup { background-color: var(--card-2); color: var(--t
 .form-actions .error { font-size: 13px; }
 .live-hero.static { cursor: default; }
 @media (max-width: 860px) { .fields { grid-template-columns: 1fr; } }
+
+/* holidays */
+.holidays .help { margin: 0 0 18px; font-size: 13px; line-height: 1.6; }
+.holidays-body { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 28px; align-items: start; }
+.holiday-form .weekend small { display: block; font-size: 12px; }
+.holiday-lists h4 { margin: 0 0 8px; color: var(--text-2); font-size: 12px; font-weight: 500; }
+.holiday-lists h4:not(:first-child) { margin-block-start: 18px; }
+.holiday-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.holiday-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-radius: 16px; background: var(--frame); border: 1px solid var(--line-2); }
+.holiday-list li.past { opacity: .6; }
+.holiday-list li > div:first-child { display: grid; gap: 4px; min-inline-size: 0; }
+.holiday-list b { font-weight: 500; overflow-wrap: anywhere; }
+.holiday-list small { color: var(--text-2); font-size: 12px; }
+.holiday-scope { display: flex; flex-wrap: wrap; gap: 4px; justify-content: end; max-inline-size: 220px; }
+.holiday-scope .chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--text-2); font-size: 11px; white-space: nowrap; }
+.holiday-scope .chip.company { background: var(--sand); border-color: var(--sand); color: var(--navy); }
+.holiday-list .round { inline-size: 36px; block-size: 36px; }
+@media (max-width: 1100px) { .holidays-body { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .holiday-list li { grid-template-columns: minmax(0, 1fr) auto; } .holiday-scope { grid-column: 1 / -1; grid-row: 2; justify-content: start; max-inline-size: none; } }
 
 /* ---------- system health: one bar segment per check, then the checks grouped by area ---------- */
 .health { --ok: var(--good); --warn: var(--warning); --fail: var(--critical); --off: var(--card-3); }

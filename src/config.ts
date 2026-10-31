@@ -8,6 +8,8 @@ export const config = {
   LATE_GRACE_MINUTES: Number(process.env.LATE_GRACE_MINUTES ?? 15),
   REQUIRED_MINUTES: Number(process.env.REQUIRED_MINUTES ?? 8 * 60),
   WEEKEND_DAYS: [5, 6] as number[], // Friday, Saturday
+  HOLIDAYS: {} as Record<string, string>, // company-wide days off, YYYY-MM-DD -> name; set in the dashboard
+  DEPARTMENT_HOLIDAYS: {} as Record<string, Record<string, string>>, // department -> its own days off
   UNIFI_WEBHOOK_SECRET: process.env.UNIFI_WEBHOOK_SECRET || 'Unifi-secret-2026',
   UNIFI_BASE_URL: process.env.UNIFI_BASE_URL || 'https://192.168.8.1',
   UNIFI_API_TOKEN: process.env.UNIFI_API_TOKEN || '5wnFjU6RoXNMFnT9gx3b9K_QKVNlTubJ',
