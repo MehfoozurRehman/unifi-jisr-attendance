@@ -1,6 +1,6 @@
 import { Agent, fetch } from 'undici';
 import type { Config } from './config.js';
-import type { UnifiDirectory } from './domain.js';
+import type { Probe, UnifiDirectory } from './domain.js';
 
 // UniFi returns both `email` (frequently an empty string) and `user_email`; take the first real address.
 export const pickEmail = (data: any): string => {
@@ -16,6 +16,23 @@ export class UnifiClient implements UnifiDirectory {
   private readonly dispatcher: Agent | undefined;
   constructor(private readonly config: Config) {
     this.dispatcher = config.UNIFI_IGNORE_SSL ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined;
+  }
+  /** Health check: can we read the UniFi user list, and which users have no email (their taps cannot reach Jisr)? */
+  async probe(): Promise<Probe & { users: number | null; withoutEmail: string[] }> {
+    const host = this.config.UNIFI_BASE_URL.replace(/\/$/, '').replace(/:\d+$/, '');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${host}:12445/api/v1/developer/users?page_num=1&page_size=1000`, { headers: { Authorization: `Bearer ${this.config.UNIFI_API_TOKEN}`, Accept: 'application/json' }, signal: controller.signal, ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}) });
+      if (!response.ok) return { ok: false, status: response.status, message: response.status === 401 || response.status === 403 ? 'notAuthorized' : 'httpError', users: null, withoutEmail: [] };
+      const body = await response.json() as any, list = Array.isArray(body?.data) ? body.data : [];
+      // Only active people matter; UniFi keeps deactivated users in the list.
+      const active = list.filter((u: any) => !u.status || String(u.status).toUpperCase() === 'ACTIVE');
+      const withoutEmail = active.filter((u: any) => !pickEmail(u)).map((u: any) => String(u.full_name || `${u.first_name ?? ''} ${u.last_name ?? ''}`).trim() || String(u.id));
+      return { ok: true, status: response.status, message: 'ok', users: active.length, withoutEmail };
+    } catch (error) {
+      return { ok: false, status: null, message: controller.signal.aborted ? 'timeout' : error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error), users: null, withoutEmail: [] };
+    } finally { clearTimeout(timeout); }
   }
   async emailForUser(userId: string): Promise<string | null> {
     if (this.cache.has(userId)) return this.cache.get(userId) ?? null;

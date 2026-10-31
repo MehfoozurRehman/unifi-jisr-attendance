@@ -5,12 +5,12 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "dev": "node api.js && vite --host 0.0.0.0",
+    "dev": "vite --host 0.0.0.0",
     "dev:server": "tsx watch src/index.ts",
     "local": "tsx src/local.ts",
-    "build": "node api.js && npm run build:client && tsc",
+    "build": "npm run build:client && tsc",
     "build:client": "vite build",
-    "start": "node api.js && node dist/index.js",
+    "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

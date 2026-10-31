@@ -1,6 +1,6 @@
 import type { Config } from './config.js';
 import type { Store } from './store.js';
-import { Attendance, dateParts, dayStart, localDate, summarizeDay, type DaySummary, type Tap } from './attendance.js';
+import { Attendance, dateParts, dayStart, forDepartment, isWorkday, localDate, summarizeDay, type DaySummary, type Tap } from './attendance.js';
 import { directory } from './directory.js';
 
 const DAY = 86_400_000;
@@ -33,7 +33,7 @@ export interface PersonStats {
 }
 export interface Wave { median: number | null; count: number }
 export interface DailyPoint {
-  date: string; workday: boolean; tracked: boolean; present: number; onTime: number; late: number; absent: number; minutes: number; averageMinutes: number; outsideMinutes: number; breaks: number;
+  date: string; workday: boolean; holiday: string | null; tracked: boolean; present: number; onTime: number; late: number; absent: number; minutes: number; averageMinutes: number; outsideMinutes: number; breaks: number;
   /** When people typically arrived, stepped out for a break, and left that day; `first` are the earliest arrivals. */
   waves: { arrival: Wave & { first: { name: string; at: number }[] }; breakOut: Wave; departure: Wave };
 }
@@ -67,7 +67,9 @@ export function analyze(store: Store, attendance: Attendance, config: Config, fr
     if (tap.door) doors.set(tap.door, (doors.get(tap.door) ?? 0) + 1);
   }
 
-  const daily = new Map<string, DailyPoint>(dates.map(date => [date, { date, workday: !config.WEEKEND_DAYS.includes(new Date(`${date}T12:00:00Z`).getUTCDay()), tracked: !!since && date >= since && date <= today, present: 0, onTime: 0, late: 0, absent: 0, minutes: 0, averageMinutes: 0, outsideMinutes: 0, breaks: 0, waves: { arrival: { median: null, count: 0, first: [] }, breakOut: { median: null, count: 0 }, departure: { median: null, count: 0 } } }]));
+  // Department holidays give only that department the day off; a department or person view shows them as days off.
+  const viewConfig = forDepartment(config, scope.department ?? (scope.person ? scoped[0]?.department : null));
+  const daily = new Map<string, DailyPoint>(dates.map(date => [date, { date, workday: isWorkday(date, viewConfig), holiday: viewConfig.HOLIDAYS[date] ?? null, tracked: !!since && date >= since && date <= today, present: 0, onTime: 0, late: 0, absent: 0, minutes: 0, averageMinutes: 0, outsideMinutes: 0, breaks: 0, waves: { arrival: { median: null, count: 0, first: [] }, breakOut: { median: null, count: 0 }, departure: { median: null, count: 0 } } }]));
   const waveData = new Map(dates.map(date => [date, { arrive: [] as { name: string; at: number; m: number }[], breakOut: [] as number[], depart: [] as number[] }]));
   const occupancy = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
   const weekdayCount = Array.from({ length: 7 }, () => 0);
@@ -76,7 +78,8 @@ export function analyze(store: Store, attendance: Attendance, config: Config, fr
 
   const stats: PersonStats[] = scoped.map(member => {
     const dayMap = byPerson.get(member.key) ?? new Map<string, Tap[]>();
-    const summaries: DaySummary[] = dates.map(date => summarizeDay(date, dayMap.get(date) ?? [], config, now, since));
+    const own = forDepartment(config, member.department);
+    const summaries: DaySummary[] = dates.map(date => summarizeDay(date, dayMap.get(date) ?? [], own, now, since));
     const personArrivals: number[] = [], personDepartures: number[] = [];
     let streak = 0, bestStreak = 0, run = 0;
     for (const day of summaries) {
@@ -176,5 +179,5 @@ export function contributions(store: Store, attendance: Attendance, config: Conf
   const end = new Date(`${to}T12:00:00Z`); const endOfWeek = addDays(to, 6 - end.getUTCDay());
   const from = addDays(endOfWeek, -(53 * 7) + 1);
   const result = analyze(store, attendance, config, from, endOfWeek, scope, now);
-  return { from, to: endOfWeek, days: result.daily.map(p => ({ date: p.date, minutes: p.minutes, present: p.present, tracked: p.tracked, workday: p.workday })), people: result.kpis.people };
+  return { from, to: endOfWeek, days: result.daily.map(p => ({ date: p.date, minutes: p.minutes, present: p.present, tracked: p.tracked, workday: p.workday, holiday: p.holiday })), people: result.kpis.people };
 }
