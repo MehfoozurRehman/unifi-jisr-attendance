@@ -21,6 +21,8 @@ export function createApp(store: Store, worker: Worker, config: Config, publicDi
   const app = new Hono();
   app.get('/health', c => c.json({ ok: true, database: true, paused: store.setting('paused') === 'true', workerLastTick: Number(store.setting('workerLastTick') || 0), employeeError: store.setting('employeeError') || null }));
   const webhook = async (c: any) => {
+    // UniFi posts from inside the office network. Anything that came through the Cloudflare tunnel is refused.
+    if (c.req.header('cf-connecting-ip')) return c.json({ ok: false }, 403);
     const supplied = (c.req.header('authorization') || '').replace(/^Bearer\s+/i, '') || c.req.header('x-webhook-secret') || c.req.query('secret') || '';
     if (!same(supplied, config.UNIFI_WEBHOOK_SECRET)) return c.json({ ok: false }, 401);
     const raw = await c.req.text();
@@ -34,7 +36,8 @@ export function createApp(store: Store, worker: Worker, config: Config, publicDi
   app.post('/api/login', async c => {
     const body = await c.req.json().catch(() => ({}));
     const username = String(body.username || 'admin').trim().toLowerCase(), password = String(body.password || '');
-    const address = c.req.header('x-forwarded-for')?.split(',')[0].trim() || 'local';
+    // Cloudflare sets CF-Connecting-IP itself; a visitor can fake X-Forwarded-For to dodge the lockout.
+    const address = c.req.header('cf-connecting-ip')?.trim() || c.req.header('x-forwarded-for')?.split(',')[0].trim() || 'local';
     const keys = [`u:${username}`, `a:${address}`];
     if (loginBlocked(keys)) return c.json({ ok: false, error: 'Too many attempts. Try again in 15 minutes.' }, 429);
     const user = authenticate(store, username, password, config.DASHBOARD_PASSWORD);
@@ -42,7 +45,9 @@ export function createApp(store: Store, worker: Worker, config: Config, publicDi
     clearFailures(keys);
     const token = randomBytes(32).toString('hex');
     store.session(token, Date.now() + config.SESSION_TTL_MS, user.username, user.role);
-    c.header('Set-Cookie', `attendance_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(config.SESSION_TTL_MS / 1000)}`);
+    // Secure only over HTTPS, so signing in at http://<nas>:3000 inside the office keeps working.
+    const secure = c.req.header('x-forwarded-proto') === 'https' ? ' Secure;' : '';
+    c.header('Set-Cookie', `attendance_session=${token}; HttpOnly;${secure} SameSite=Strict; Path=/; Max-Age=${Math.floor(config.SESSION_TTL_MS / 1000)}`);
     return c.json({ ok: true, user });
   });
   app.post('/api/logout', c => { const token = cookie(c.req.header('cookie') || '', 'attendance_session'); if (token) store.deleteSession(token); c.header('Set-Cookie', 'attendance_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'); return c.json({ ok: true }); });
