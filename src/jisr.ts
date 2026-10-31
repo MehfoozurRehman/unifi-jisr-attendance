@@ -74,7 +74,8 @@ export class JisrClient implements JisrGateway {
     const read = async (path: string): Promise<Probe> => {
       try {
         const { response, body } = await this.request(path, { headers: { ...this.headers(), 'Access-Token': token } });
-        if (response.ok && body?.success !== false) return { ok: true, status: response.status, message: 'ok' };
+        // Same test the worker uses, so an HTML error page with a 200 is not reported as healthy.
+        if (response.ok && body?.success === true) return { ok: true, status: response.status, message: 'ok' };
         return { ok: false, status: response.status, message: response.status === 403 ? 'notAuthorized' : text(body?.error) || 'httpError' };
       } catch (error) { return failure(error); }
     };

@@ -42,4 +42,25 @@ describe('system health', () => {
     expect(after.checks.find(c => c.id === 'data.unmatched')).toMatchObject({ level: 'warn', params: { count: 1, names: ['Visitor'] } });
     s.close();
   });
+  it('counts a tap by someone removed from the list as unmatched, and ignores old taps', async () => {
+    const s = new Store(':memory:'); ensureDirectory(s);
+    const now = Date.now(), person = { employeeId: 'A', jisrId: null, nameAr: null, nameEn: 'Left', titleAr: null, titleEn: null, function: null, department: 'Ops', email: 'left@example.com', officeNumber: null, officeType: null, active: true };
+    const other = { ...person, employeeId: 'B', nameEn: 'Stays', email: 'stays@example.com' };
+    saveDirectory(s, [person, other], [], now);
+    saveDirectory(s, [other], [], now);
+    const tap = (email: string, name: string, at: number) => JSON.stringify({ id: 'access.unlocks.location_unlocked', device: 'r', device_name: 'Door', location_name: 'Door', user: email, user_name: name, user_email: email, time: String(Math.floor(at / 1000)), direction: 'entered', credential_type: 'NFC', admin: '', emergency_mode: '' });
+    s.ingest(tap('left@example.com', 'Left', now), now, config);
+    const old = now - 100 * 86_400_000;
+    s.ingest(tap('gone@example.com', 'Gone', old), old, { ...config, MAX_EVENT_AGE_MS: 1e12 });
+    const report = await health(s, config, gateway(), unifi(), { refresh: true, now });
+    expect(report.checks.find(c => c.id === 'data.unmatched')).toMatchObject({ level: 'warn', params: { count: 1, names: ['Left'] } });
+    s.close();
+  });
+  it('still returns a report when the database cannot be read', async () => {
+    const s = new Store(':memory:'); ensureDirectory(s); s.close();
+    const report = await health(s, config, gateway(), unifi(), { refresh: true, now: Date.now() });
+    expect(report.level).toBe('fail');
+    expect(report.checks.find(c => c.id === 'system.database')).toMatchObject({ level: 'fail', code: 'unreachable' });
+    expect(report.checks.find(c => c.id === 'jisr.auth')?.level).toBe('ok');
+  });
 });
