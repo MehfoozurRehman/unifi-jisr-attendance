@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { clock, duration, longDate, minuteClock, monthShort, shortDate, t, weekdayShort, type Lang } from './i18n';
+import { clock, duration, hourLabel, longDate, minuteClock, monthShort, shortDate, t, weekdayShort, type Lang } from './i18n';
 
 // Validated on the dark panel: status steps from the reference status palette, a one-hue sand ramp for magnitude,
 // and a categorical blue for time spent outside.
@@ -12,7 +12,7 @@ export const rampColor = (value: number, max: number) => value <= 0 || max <= 0 
 export type Wave = { median: number | null; count: number };
 export type DailyPoint = { date: string; workday: boolean; tracked: boolean; present: number; onTime: number; late: number; absent: number; minutes: number; averageMinutes: number; outsideMinutes: number; breaks: number; waves: { arrival: Wave & { first: { name: string; at: number }[] }; breakOut: Wave; departure: Wave } };
 export type Tap = { at: number; direction: 'in' | 'out' };
-export type Day = { date: string; weekday: number; workday: boolean; status: string; firstIn: number | null; lastOut: number | null; minutes: number; late: boolean; short: boolean; missingOut: boolean; missingIn: boolean; inside: boolean; taps: Tap[]; breaks: number; outsideMinutes: number; lateMinutes: number; overtimeMinutes: number };
+export type Day = { date: string; weekday: number; workday: boolean; holiday?: string | null; status: string; firstIn: number | null; lastOut: number | null; minutes: number; late: boolean; short: boolean; missingOut: boolean; missingIn: boolean; inside: boolean; taps: Tap[]; breaks: number; outsideMinutes: number; lateMinutes: number; overtimeMinutes: number };
 
 /* ---------- sizing: every chart fills its card ---------- */
 function useSize<T extends HTMLElement>() {
@@ -40,11 +40,13 @@ export function useTip() {
   };
   return { tip, show, hide: () => setTip(null) };
 }
+// Centred above the pointer, kept inside the window; flips below when there is no room above.
 export function Tip({ tip }: { tip: TipState }) {
   if (!tip) return null;
-  return <div className="tip" role="tooltip" style={{ left: Math.min(Math.max(tip.x + 14, 8), window.innerWidth - 250), top: Math.max(tip.y - 12, 8) }}>{tip.content}</div>;
+  const below = tip.y < 140;
+  return <div className={`tip${below ? ' below' : ''}`} role="tooltip" style={{ left: Math.min(Math.max(tip.x, 128), window.innerWidth - 128), top: below ? tip.y + 20 : tip.y - 14 }}>{tip.content}</div>;
 }
-const Row = ({ color, label, value }: { color?: string; label: string; value: React.ReactNode }) => <div className="tip-row">{color && <i style={{ background: color }} />}<b>{value}</b><span>{label}</span></div>;
+const Row = ({ color, label, value }: { color?: string; label: string; value: React.ReactNode }) => <div className="tip-row">{color && <i style={{ background: color }} />}<span>{label}</span><b>{value}</b></div>;
 export const Legend = ({ items }: { items: [string, string][] }) => <div className="legend">{items.map(([c, l]) => <span key={l}><i style={{ background: c }} />{l}</span>)}</div>;
 
 /* ---------- daily attendance, stacked (company / department) ---------- */
@@ -113,8 +115,8 @@ export function WorkActivity({ lang, matrix, fromHour = 7, toHour = 18 }: { lang
     <div className="activity-legend">{(['none', 'low', 'mid', 'high'] as const).map(l => <span key={l}><i className={`act ${l}`} />{w.activityLevels[l]}</span>)}</div>
     <div className="activity-grid" style={{ gridTemplateRows: `repeat(${hours.length}, minmax(14px, 1fr)) auto` }}>
       {hours.map(h => <React.Fragment key={h}>
-        <span className="axis">{String(h).padStart(2, '0')}:00</span>
-        {Array.from({ length: 7 }, (_, d) => { const v = matrix[d]?.[h] ?? 0; return <i key={d} className={`act ${level(v)}`} onPointerMove={e => show(e, <><strong>{weekdayShort(lang, d)} · {String(h).padStart(2, '0')}:00</strong><Row label={w.peopleInside} value={v} /></>)} onPointerLeave={hide} />; })}
+        <span className="axis">{hourLabel(lang, h)}</span>
+        {Array.from({ length: 7 }, (_, d) => { const v = matrix[d]?.[h] ?? 0; return <i key={d} className={`act ${level(v)}`} onPointerMove={e => show(e, <><strong>{weekdayShort(lang, d)} · {hourLabel(lang, h)} – {hourLabel(lang, h + 1)}</strong><Row label={w.peopleInside} value={v} /></>)} onPointerLeave={hide} />; })}
       </React.Fragment>)}
       <span />{Array.from({ length: 7 }, (_, d) => <span key={d} className="axis center">{weekdayShort(lang, d)}</span>)}
     </div>
@@ -166,14 +168,26 @@ export function WeekBoard({ lang, days, today, cards, fromHour = 7, toHour = 19 
   const span = (toHour - fromHour) * 60;
   const pct = (m: number) => `${((Math.min(Math.max(m, fromHour * 60), toHour * 60) - fromHour * 60) / span) * 100}%`;
   const todayIndex = days.indexOf(today);
+  // Cards on the same day never overlap: each is at least MIN tall and starts below the one before it,
+  // and a pile that runs past the last hour is pushed back up. The card text keeps the real time.
+  const MIN = span * 0.15, GAP = span * 0.012;
+  const placed = new Map<BoardCard, { top: number; height: number }>();
+  for (let d = 0; d < days.length; d++) {
+    const list = cards.filter(c => c.day === d).sort((a, b) => a.start - b.start).map(c => ({ c, top: Math.max(c.start, fromHour * 60), height: Math.max(c.end - c.start, MIN) }));
+    for (let i = 1; i < list.length; i++) list[i].top = Math.max(list[i].top, list[i - 1].top + list[i - 1].height + GAP);
+    let limit = toHour * 60;
+    for (let i = list.length - 1; i >= 0; i--) { list[i].top = Math.max(fromHour * 60, Math.min(list[i].top, limit - list[i].height)); limit = list[i].top - GAP; }
+    for (const p of list) placed.set(p.c, p);
+  }
+  const at = (m: number) => `${((m - fromHour * 60) / span) * 100}%`;
   return <div className="board" dir="ltr">
     <div className="board-days"><span />{days.map((d, i) => <span key={d} className={i === todayIndex ? 'on' : ''}><small>{weekdayShort(lang, new Date(`${d}T12:00:00Z`).getUTCDay())}</small><b>{Number(d.slice(8))}</b></span>)}</div>
     <div className="board-body">
-      <div className="board-hours">{hours.map(h => <span key={h} style={{ top: pct(h * 60) }}>{String(h).padStart(2, '0')}:00</span>)}</div>
+      <div className="board-hours">{hours.map(h => <span key={h} style={{ top: pct(h * 60) }}>{hourLabel(lang, h)}</span>)}</div>
       <div className="board-cols">
         {days.map((d, i) => <div key={d} className={`board-col${i === todayIndex ? ' on' : ''}`} />)}
         {hours.map(h => <em key={h} className="board-line" style={{ top: pct(h * 60) }} />)}
-        {cards.map((c, i) => <div key={i} className={`board-card ${c.tone}`} style={{ top: pct(c.start), height: `max(44px, calc(${pct(c.end)} - ${pct(c.start)}))`, left: `calc(${(c.day / days.length) * 100}% + 4px)`, width: `calc(${100 / days.length}% - 8px)` }}>
+        {cards.map((c, i) => <div key={i} className={`board-card ${c.tone}`} style={{ top: at(placed.get(c)!.top), height: at(fromHour * 60 + placed.get(c)!.height), left: `calc(${(c.day / days.length) * 100}% + 4px)`, width: `calc(${100 / days.length}% - 8px)` }}>
           <b>{c.title}</b><small>{c.sub}</small>
           {c.avatars && c.day === todayIndex && <span className="avatars">{c.avatars.slice(0, 3).map(a => <i key={a}>{a.split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase()}</i>)}</span>}
         </div>)}
@@ -192,12 +206,12 @@ export function TimeHistogram({ lang, bins, title, marker }: { lang: Lang; bins:
       const first = bins[0]?.start ?? 0, span = bins.length * 30, xOf = (m: number) => pad.l + ((m - first) / span) * (W - pad.l - pad.r);
       return <svg width={W} height={H} role="img" aria-label={title}>
         <line className="grid" x1={pad.l} x2={W - pad.r} y1={H - pad.b} y2={H - pad.b} />
-        {bins.map((b, i) => { const h = ((H - pad.t - pad.b) * b.count) / max; return <g key={b.start} onPointerMove={e => show(e, <><strong>{minuteClock(b.start)}–{minuteClock(b.start + 30)}</strong><Row label={w.count} value={b.count} /></>)} onPointerLeave={hide}>
+        {bins.map((b, i) => { const h = ((H - pad.t - pad.b) * b.count) / max; return <g key={b.start} onPointerMove={e => show(e, <><strong>{minuteClock(b.start, lang)}–{minuteClock(b.start + 30, lang)}</strong><Row label={w.count} value={b.count} /></>)} onPointerLeave={hide}>
           <rect className="hit" x={pad.l + i * step} y={pad.t} width={step} height={H - pad.t - pad.b} />
           {b.count > 0 && <rect x={pad.l + i * step + (step - bar) / 2} y={H - pad.b - h} width={bar} height={h} rx={Math.min(5, bar / 2)} fill={RAMP[3]} />}
-          {b.start % 60 === 0 && <text className="axis" x={pad.l + i * step + step / 2} y={H - 6} textAnchor="middle">{minuteClock(b.start).slice(0, 2)}</text>}
+          {b.start % 60 === 0 && <text className="axis" x={pad.l + i * step + step / 2} y={H - 6} textAnchor="middle">{hourLabel(lang, b.start / 60)}</text>}
         </g>; })}
-        {marker !== undefined && marker >= first && marker <= first + span && <g><line className="ref" x1={xOf(marker)} x2={xOf(marker)} y1={pad.t} y2={H - pad.b} /><text className="axis ref-label" x={xOf(marker)} y={pad.t - 6} textAnchor="middle">{minuteClock(marker)}</text></g>}
+        {marker !== undefined && marker >= first && marker <= first + span && <g><line className="ref" x1={xOf(marker)} x2={xOf(marker)} y1={pad.t} y2={H - pad.b} /><text className="axis ref-label" x={xOf(marker)} y={pad.t - 6} textAnchor="middle">{minuteClock(marker, lang)}</text></g>}
       </svg>;
     }}</Fit>
     <Tip tip={tip} />
@@ -233,7 +247,7 @@ export function DailyHours({ lang, days, required }: { lang: Lang; days: Day[]; 
 }
 export function DayTip({ lang, day }: { lang: Lang; day: Day }) {
   const w = t(lang);
-  const label = day.status === 'green' ? w.onTime : day.status === 'yellow' ? w.late : day.status === 'red' ? w.absent : day.status === 'off' ? w.weekend : day.status === 'untracked' ? w.beforeRecording : w.today;
+  const label = day.status === 'green' ? w.onTime : day.status === 'yellow' ? w.late : day.status === 'red' ? w.absent : day.status === 'off' ? day.holiday ?? w.weekend : day.status === 'untracked' ? w.beforeRecording : w.today;
   return <><strong>{longDate(lang, day.date)}</strong><Row color={statusColor(day.status) === 'transparent' ? undefined : statusColor(day.status)} label={w.status} value={label} /><Row label={w.insideTime} value={duration(lang, day.minutes)} />{day.outsideMinutes > 0 && <Row color={OUTSIDE} label={`${w.outside} · ${day.breaks} ${w.breaks}`} value={duration(lang, day.outsideMinutes)} />}<Row label={w.firstIn} value={clock(lang, day.firstIn)} /><Row label={w.lastOut} value={day.inside ? w.inside : clock(lang, day.lastOut)} />{day.missingIn && <span className="muted">{w.exitNoEntry}</span>}{day.missingOut && <span className="muted">{w.noExit}</span>}</>;
 }
 
@@ -248,7 +262,7 @@ export function ArrivalDots({ lang, days, start, grace }: { lang: Lang; days: Da
       const x = (i: number) => pad.l + (i + 0.5) * ((W - pad.l - pad.r) / Math.max(days.length, 1));
       const y = (m: number) => pad.t + (H - pad.t - pad.b) * ((Math.min(Math.max(m, lo), hi) - lo) / (hi - lo));
       return <svg width={W} height={H} role="img" aria-label={w.arrivals}>
-        {[7, 9, 11, 13].map(h => <g key={h}><line className="grid" x1={pad.l} x2={W - pad.r} y1={y(h * 60)} y2={y(h * 60)} /><text className="axis" x={pad.l - 6} y={y(h * 60) + 4} textAnchor="end">{String(h).padStart(2, '0')}:00</text></g>)}
+        {[7, 9, 11, 13].map(h => <g key={h}><line className="grid" x1={pad.l} x2={W - pad.r} y1={y(h * 60)} y2={y(h * 60)} /><text className="axis" x={pad.l - 6} y={y(h * 60) + 4} textAnchor="end">{hourLabel(lang, h)}</text></g>)}
         <line className="ref" x1={pad.l} x2={W - pad.r} y1={y(start + grace)} y2={y(start + grace)} />
         {pts.map(p => <g key={p.d.date} onPointerMove={e => show(e, <DayTip lang={lang} day={p.d} />)} onPointerLeave={hide}><circle className="hit" cx={x(p.i)} cy={y(p.m)} r={12} /><circle cx={x(p.i)} cy={y(p.m)} r={5} fill={p.m > start + grace ? STATUS.warning : STATUS.good} stroke="var(--card)" strokeWidth={2} /></g>)}
         {!pts.length && <text className="axis" x={W / 2} y={H / 2} textAnchor="middle">{w.noData}</text>}
@@ -266,7 +280,7 @@ export function DayTimeline({ lang, days }: { lang: Lang; days: Day[] }) {
   const pct = (m: number) => `${((Math.min(Math.max(m, lo), hi) - lo) / (hi - lo)) * 100}%`;
   const rows = days.filter(d => d.taps.length || d.status === 'red').slice(-10).reverse();
   return <div className="timeline" dir="ltr">
-    <div className="tl-axis">{[6, 9, 12, 15, 18, 21].map(h => <b key={h} style={{ left: pct(h * 60) }}>{String(h).padStart(2, '0')}:00</b>)}</div>
+    <div className="tl-axis">{[6, 9, 12, 15, 18, 21].map(h => <b key={h} style={{ left: pct(h * 60) }}>{hourLabel(lang, h)}</b>)}</div>
     {rows.map(d => {
       const segs: { a: number; b: number }[] = []; let open: number | null = null;
       for (const tap of d.taps) { if (tap.direction === 'in') { if (open === null) open = mod(tap.at); } else if (open !== null) { segs.push({ a: open, b: mod(tap.at) }); open = null; } }

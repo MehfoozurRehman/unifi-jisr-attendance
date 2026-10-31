@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './app.css';
-import { Company, Department, Departments, Employee, Employees, Settings, go, initials, presetRange, type Me, type Member, type Preset, type Range } from './screens';
+import { Company, Department, Departments, Employee, Employees, Settings, go, initials, presetRange, type HealthLevel, type Me, type Member, type Preset, type Range } from './screens';
 import { t, type Lang } from './i18n';
 
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -64,6 +64,13 @@ function App() {
   useEffect(() => { const on = () => { setWhere(route()); window.scrollTo(0, 0); }; window.addEventListener('hashchange', on); return () => window.removeEventListener('hashchange', on); }, []);
   const loadMe = () => fetch('/api/admin/me').then(r => r.ok ? r.json() : false).then(setMe).catch(() => setMe(false));
   useEffect(() => { void loadMe(); }, []);
+  // A dot on the Settings tab when system health has a warning or a problem (the server caches live checks for a minute).
+  const [healthLevel, setHealthLevel] = useState<HealthLevel | null>(null);
+  useEffect(() => {
+    if (!me) return;
+    const check = () => void fetch('/api/admin/health').then(r => r.ok ? r.json() : null).then(h => setHealthLevel(h?.level ?? null)).catch(() => undefined);
+    check(); const timer = setInterval(check, 120_000); return () => clearInterval(timer);
+  }, [me]);
   useEffect(() => { document.documentElement.lang = lang; document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr'; }, [lang]);
   const setLang = (l: Lang) => { setLangState(l); write('zood.lang', l); };
   const setRange = (r: Range) => { setRangeState(r); if (r.preset !== 'custom') write('zood.range', r.preset); };
@@ -86,12 +93,13 @@ function App() {
     <input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder={w.password} aria-label={w.password} />
     <button className="btn primary">{w.signIn}</button>{error && <p className="error" role="alert">{error}</p>}
     <button type="button" className="link" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{w.language}</button></form></main>;
-  const tab = (page: Route['page'], match: Route['page'][], href: string, label: string) => <a className={match.includes(where.page) ? 'on' : ''} href={href} aria-current={page === where.page ? 'page' : undefined}>{label}</a>;
+  const tab = (page: Route['page'], match: Route['page'][], href: string, label: string, extra?: React.ReactNode) => <a className={match.includes(where.page) ? 'on' : ''} href={href} aria-current={page === where.page ? 'page' : undefined}>{label}{extra}</a>;
+  const healthDot = healthLevel === 'fail' || healthLevel === 'warn' ? <i className={`tab-dot ${healthLevel}`} role="img" aria-label={w.health.overall[healthLevel]} /> : null;
   const screen = { lang, range, onRange: setRange };
   return <div className="frame"><div className="app">
     <header className="topbar">
       <a className="brand" href="#/" aria-label={w.company}><img src="/brand/logo-white-crop.png" alt="ZOOD زود" onError={e => { e.currentTarget.replaceWith(Object.assign(document.createElement('b'), { textContent: 'ZOOD' })); }} /></a>
-      <nav className="tabs" aria-label={w.product}>{tab('company', ['company'], '#/', w.company)}{tab('departments', ['departments', 'department'], '#/departments', w.departments)}{tab('employees', ['employees', 'employee'], '#/employees', w.employees)}{me.role === 'admin' && tab('events', ['events'], '#/events', w.events)}{tab('settings', ['settings'], '#/settings', w.settings)}</nav>
+      <nav className="tabs" aria-label={w.product}>{tab('company', ['company'], '#/', w.company)}{tab('departments', ['departments', 'department'], '#/departments', w.departments)}{tab('employees', ['employees', 'employee'], '#/employees', w.employees)}{me.role === 'admin' && tab('events', ['events'], '#/events', w.events)}{tab('settings', ['settings'], '#/settings', w.settings, healthDot)}</nav>
       <Search lang={lang} />
       <div className="top-actions">
         <button className="round" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} aria-label={w.language} title={w.language}>{lang === 'ar' ? 'EN' : 'ع'}</button>

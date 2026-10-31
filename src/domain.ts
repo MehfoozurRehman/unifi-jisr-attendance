@@ -35,10 +35,16 @@ export interface Employee { id: string; code: string; email: string | null; name
 export interface Punch { id: number; emp_code: string; terminal_sn: string; punch_time: string }
 export interface Submission { outcome: 'accepted' | 'rejected' | 'retry' | 'uncertain'; message: string; response?: unknown }
 export interface Confirmation { outcome: 'confirmed' | 'failed' | 'pending'; message: string; response?: unknown }
+/** Result of one live connection probe; `status` is the HTTP status when a response arrived. */
+export interface Probe { ok: boolean; status: number | null; message: string }
 export interface JisrGateway {
   employees(): Promise<Employee[]>;
   prepare(): Promise<void>;
   submit(punch: Punch): Promise<Submission>;
   confirm(punch: Punch): Promise<Confirmation>;
+  probe?(): Promise<{ auth: Probe; employees: Probe; attendance: Probe }>;
 }
-export interface UnifiDirectory { emailForUser(userId: string): Promise<string | null> }
+export interface UnifiDirectory {
+  emailForUser(userId: string): Promise<string | null>;
+  probe?(): Promise<Probe & { users: number | null; withoutEmail: string[] }>;
+}
